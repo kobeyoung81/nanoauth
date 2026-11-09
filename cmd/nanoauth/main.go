@@ -19,10 +19,15 @@ func main() {
 	if addr := os.Getenv("NANOAUTH_ADDR"); addr != "" {
 		cfg.ServerAddr = addr
 	}
-	// The bus owns every collection this service reads, so the endpoint and the
-	// internal token replace the DSN that used to be here.
+	// The bus owns accounts, tickets and links; the admin module owns
+	// configuration (the JWT keypair, the directory settings). Both are asked
+	// over HTTP with the same internal token, replacing the DSN that used to be
+	// here.
 	if busURL := os.Getenv("NANOAUTH_BUS_URL"); busURL != "" {
 		cfg.BusURL = busURL
+	}
+	if adminURL := os.Getenv("NANOSEC_ADMIN_URL"); adminURL != "" {
+		cfg.AdminURL = adminURL
 	}
 	if token := os.Getenv("NANOSEC_BUS_INTERNAL_TOKEN"); token != "" {
 		cfg.BusToken = token

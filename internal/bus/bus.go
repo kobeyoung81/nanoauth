@@ -25,6 +25,8 @@ var ErrNotFound = errors.New("not found")
 // a 409 from the create endpoint means the address is taken, which the sign-in
 // flow recovers from by linking instead of creating.
 type StatusError struct {
+	// Name is the service that answered (bus or admin).
+	Name   string
 	Method string
 	Path   string
 	Status int
@@ -41,16 +43,26 @@ func IsStatus(err error, code int) bool {
 	return errors.As(err, &statusErr) && statusErr.Status == code
 }
 
-// Client talks to the bus's internal REST surface.
+// Client talks to one of the platform's internal REST surfaces.
+//
+// It serves the bus (accounts, tokens, tickets) and the admin module
+// (configuration) — both answer with the same JSON conventions and the same
+// internal token, so one small client covers them; `name` only makes errors say
+// which service refused.
 type Client struct {
+	name string
 	base string
 	http *http.Client
 }
 
-// New builds a client. An empty token is allowed (a local bus without the
-// middleware), but the deployment always sets one.
-func New(baseURL, token string) *Client {
+// New builds a client for the bus.
+func New(baseURL, token string) *Client { return NewFor("bus", baseURL, token) }
+
+// NewFor builds a client for any internal service. An empty token is allowed (a
+// local service without the middleware), but the deployment always sets one.
+func NewFor(name, baseURL, token string) *Client {
 	return &Client{
+		name: name,
 		base: baseURL,
 		http: &http.Client{
 			Timeout:   15 * time.Second,
@@ -92,7 +104,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 		return fmt.Errorf("bus %s %s: read body: %w", method, path, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &StatusError{Method: method, Path: path, Status: resp.StatusCode, Body: trim(raw)}
+		return &StatusError{Name: c.name, Method: method, Path: path, Status: resp.StatusCode, Body: trim(raw)}
 	}
 	if out == nil || len(raw) == 0 {
 		return nil

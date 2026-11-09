@@ -33,12 +33,42 @@ func New(cfg config.AuthConfig) (*Server, error) {
 	return &Server{cfg: cfg, bus: bus.New(cfg.BusURL, cfg.BusToken)}, nil
 }
 
+// loadJWTKeyWithRetry tolerates an admin module that is still starting: the key
+// is a hard dependency (nothing can be signed without it), so it retries for
+// about 30 seconds and then fails the process rather than serving tokens signed
+// with a key nobody else has.
+func loadJWTKeyWithRetry(ctx context.Context, keyStore *store.KeyStore, bits int) (string, string, error) {
+	delays := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 8 * time.Second, 8 * time.Second}
+	var lastErr error
+	for attempt := 0; attempt <= len(delays); attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", "", ctx.Err()
+			case <-time.After(delays[attempt-1]):
+			}
+		}
+		privatePEM, publicPEM, err := keyStore.GetOrCreateJWTKey(ctx, bits)
+		if err == nil {
+			if attempt > 0 {
+				slog.Info("admin config became reachable", "attempts", attempt+1)
+			}
+			return privatePEM, publicPEM, nil
+		}
+		lastErr = err
+		slog.Warn("jwt key not readable yet", "attempt", attempt+1, "error", err)
+	}
+	return "", "", lastErr
+}
+
 func (s *Server) Start(ctx context.Context) error {
 	// The RSA JWT keypair lives in the shared configuration (generated on first
 	// boot), so no key files or secrets need to be mounted and every replica signs
 	// with the same key.
-	keyStore := store.NewKeyStore(s.bus)
-	privatePEM, publicPEM, err := keyStore.GetOrCreateJWTKey(ctx, s.cfg.JWT.KeyBits)
+	// Configuration lives in the admin module now; the bus serves messages only.
+	admin := bus.NewFor("admin", s.cfg.AdminURL, s.cfg.BusToken)
+	keyStore := store.NewKeyStore(admin)
+	privatePEM, publicPEM, err := loadJWTKeyWithRetry(ctx, keyStore, s.cfg.JWT.KeyBits)
 	if err != nil {
 		return fmt.Errorf("load jwt key: %w", err)
 	}
@@ -60,7 +90,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// The directory login reads its settings from the shared config store, so an
 	// edit in the portal takes effect without restarting nanoauth.
-	directoryLoader := directory.NewLoader(s.bus)
+	directoryLoader := directory.NewLoader(admin)
 	authHandler := handler.NewAuthHandler(tokenSvc, userStore, tokenStore).
 		WithDirectory(directory.NewClient(), directoryLoader)
 	directoryHandler := handler.NewDirectoryHandler(directory.NewClient(), directoryLoader, userStore)

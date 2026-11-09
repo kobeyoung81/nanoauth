@@ -6,6 +6,9 @@ type AuthConfig struct {
 	// storage configuration. There is no DSN to point anywhere.
 	BusURL          string `mapstructure:"bus_url"`
 	BusToken        string `mapstructure:"bus_token"`
+	// AdminURL is the admin module, which owns the configuration this service
+	// reads and writes (the JWT keypair, the directory settings).
+	AdminURL string `mapstructure:"admin_url"`
 	RefreshTokenTTL int    `mapstructure:"refresh_token_ttl"` // seconds, default 604800 (7d)
 	JWT             JWTConfig
 	WeChat          WeChatConfig `mapstructure:"wechat"`
@@ -28,6 +31,7 @@ func DefaultConfig() AuthConfig {
 	return AuthConfig{
 		ServerAddr:      ":8081",
 		BusURL:          "http://127.0.0.1:9000",
+		AdminURL:        "http://nanoadmin:8080",
 		RefreshTokenTTL: 604800, // refresh token lifetime in seconds (7d)
 		JWT: JWTConfig{
 			KeyID:    "2026-08",
