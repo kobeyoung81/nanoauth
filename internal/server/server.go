@@ -91,7 +91,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	userStore := store.NewUserStore(s.bus).WithAccounts(s.accounts)
-	tokenStore := store.NewTokenStore(s.bus)
+	tokenStore := store.NewTokenStore(s.bus).WithAccounts(s.accounts)
 	tokenStore.SetTTL(time.Duration(s.cfg.RefreshTokenTTL) * time.Second)
 
 	// The directory login reads its settings from the shared config store, so an
