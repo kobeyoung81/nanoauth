@@ -135,6 +135,15 @@ func (s *Server) internalListAccounts(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	includeDeleted := r.URL.Query().Get("include_deleted") == "1" || r.URL.Query().Get("include_deleted") == "true"
 
+	if r.URL.Query().Get("ids_only") == "1" {
+		ids, err := s.accounts.ListUsers()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"user_ids": ids})
+		return
+	}
 	if email := r.URL.Query().Get("email"); email != "" {
 		record, err := s.accounts.AccountByEmail(email)
 		if err != nil {
@@ -439,4 +448,31 @@ func (s *Server) internalBindingOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID})
+}
+
+// internalLinkChannel links one platform identity to an account. It is the console's
+// "connect this person to a channel" action; onboarding creates its own link inside
+// resolve.
+func (s *Server) internalLinkChannel(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	var body struct {
+		Channel  string `json:"channel"`
+		SenderID string `json:"sender_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if body.Channel == "" || body.SenderID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "channel and sender_id are required"})
+		return
+	}
+	if err := s.accounts.LinkChannel(r.PathValue("userID"), body.Channel, body.SenderID); err != nil {
+		slog.Error("link channel", "user_id", r.PathValue("userID"), "error", err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "linked"})
 }

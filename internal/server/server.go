@@ -147,6 +147,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.Handle("POST /internal/v1/accounts/{userID}/bootstrap-admin", s.internalGuard(s.internalBootstrapAdmin))
 	mux.Handle("DELETE /internal/v1/accounts/{userID}/bootstrap-admin", s.internalGuard(s.internalBootstrapAdmin))
 	mux.Handle("GET /internal/v1/accounts/{userID}/channels", s.internalGuard(s.internalChannels))
+	mux.Handle("POST /internal/v1/accounts/{userID}/channels", s.internalGuard(s.internalLinkChannel))
 	mux.Handle("PATCH /internal/v1/accounts/{userID}/channels/{channel}", s.internalGuard(s.internalSetChannel))
 	mux.Handle("GET /internal/v1/accounts/{userID}/info", s.internalGuard(s.internalAccountInfo))
 	mux.Handle("GET /internal/v1/accounts/{userID}/exists", s.internalGuard(s.internalUserExists))
