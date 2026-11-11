@@ -21,9 +21,21 @@ import (
 	"gitee.com/kobeyoung81/nanoauth/migrations"
 )
 
-// testStore opens a throwaway database and applies this service's manifests.
-// Without a URI the test skips rather than pretend to pass.
+// testStore opens a throwaway database and applies this service's manifests, the
+// way a deployment does — the indexes are part of what the domain tests rely on
+// (a duplicate star collapses because of one).
 func testStore(t *testing.T) *Store {
+	t.Helper()
+	st := rawStore(t)
+	if ran := migrateAll(t, st); len(ran) == 0 {
+		t.Fatal("the test database was not migrated")
+	}
+	return st
+}
+
+// rawStore opens a throwaway database without applying anything, for the
+// migration tests themselves.
+func rawStore(t *testing.T) *Store {
 	t.Helper()
 	uri := os.Getenv("NANOAUTH_TEST_URI")
 	if uri == "" {
@@ -65,7 +77,7 @@ func migrateAll(t *testing.T, st *Store) []string {
 }
 
 func TestMigrationsAreRecordedUnderThisService(t *testing.T) {
-	st := testStore(t)
+	st := rawStore(t)
 	if ran := migrateAll(t, st); len(ran) != 3 {
 		t.Fatalf("first run applied %d manifests, want 3: %v", len(ran), ran)
 	}
@@ -93,7 +105,6 @@ func TestMigrationsAreRecordedUnderThisService(t *testing.T) {
 // link or an OAuth identity unique.
 func TestMigrations_DeclareAccountIndexes(t *testing.T) {
 	st := testStore(t)
-	migrateAll(t, st)
 	db := st.DB()
 
 	// A user's channel identity is its primary key on user_channels, and it is

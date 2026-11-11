@@ -16,21 +16,27 @@ import (
 	"gitee.com/kobeyoung81/nanoauth/internal/token"
 )
 
-// Server is nanoauth. It has no database of its own: the bus owns every
-// collection this service reads — accounts, credentials, directory links,
-// refresh tickets and the shared configuration — so all of it arrives through the
-// bus's internal API.
+// Server is nanoauth.
+//
+// The identity collections are this service's — accounts, channel links, OAuth
+// links, refresh tickets and a user's starred paths — and `accounts` is their
+// store. It may be nil in a deployment without a database URI, in which case the
+// internal surface reports itself unavailable rather than answering empty. The
+// configuration, which this service reads and writes, is the admin module's and
+// arrives over HTTP.
 type Server struct {
-	cfg     config.AuthConfig
-	bus     *bus.Client
-	httpSrv *http.Server
+	cfg      config.AuthConfig
+	bus      *bus.Client
+	accounts *store.Store
+	httpSrv  *http.Server
 }
 
-func New(cfg config.AuthConfig) (*Server, error) {
+// New builds the service. accounts may be nil (no database configured).
+func New(cfg config.AuthConfig, accounts *store.Store) (*Server, error) {
 	if cfg.BusURL == "" {
 		return nil, fmt.Errorf("bus URL is required")
 	}
-	return &Server{cfg: cfg, bus: bus.New(cfg.BusURL, cfg.BusToken)}, nil
+	return &Server{cfg: cfg, bus: bus.New(cfg.BusURL, cfg.BusToken), accounts: accounts}, nil
 }
 
 // loadJWTKeyWithRetry tolerates an admin module that is still starting: the key
@@ -114,6 +120,12 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("GET /auth/v1/userinfo", authHandler.HandleUserinfo)
 	mux.HandleFunc("POST /auth/v1/oauth/wechat", oauthHandler.HandleWeChatOAuth)
 	mux.HandleFunc("GET /auth/v1/.well-known/jwks", jwksHandler.HandleJWKS)
+
+	// The internal account surface: the bus fronts these for the console and the
+	// runtime, and forwards them here.
+	mux.Handle("GET /internal/v1/users/{userID}/git-shortcuts", s.internalGuard(s.internalListGitShortcuts))
+	mux.Handle("POST /internal/v1/users/{userID}/git-shortcuts", s.internalGuard(s.internalSaveGitShortcut))
+	mux.Handle("DELETE /internal/v1/users/{userID}/git-shortcuts/{id}", s.internalGuard(s.internalDeleteGitShortcut))
 
 	// Directory login console (read-only; the settings themselves live in
 	// service_config_items and are edited through the bus config API).

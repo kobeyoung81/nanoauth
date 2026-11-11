@@ -1,0 +1,126 @@
+package server
+
+// The internal account surface.
+//
+// Accounts are this service's, and the bus still fronts the endpoints the console
+// and the runtime call. What it fronts, it forwards here; the shared token is the
+// whole authentication — the module trust domain is the platform's, not a user's.
+
+import (
+	"crypto/subtle"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"gitee.com/kobeyoung81/nanoauth/internal/store"
+)
+
+// internalGuard requires the platform's shared token. An unconfigured token
+// refuses every request rather than serving the surface unauthenticated.
+func (s *Server) internalGuard(next http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.cfg.BusToken == "" {
+			slog.Error("nanoauth: internal endpoints have no token configured and are refusing requests",
+				"hint", "set NANOSEC_BUS_INTERNAL_TOKEN")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "authentication is not configured"})
+			return
+		}
+		token := r.Header.Get("Authorization")
+		const prefix = "bearer "
+		if len(token) < len(prefix) || !strings.EqualFold(token[:len(prefix)], prefix) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(token[len(prefix):])), []byte(s.cfg.BusToken)) != 1 {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		next(w, r)
+	})
+}
+
+// accountsReady reports whether the account store is usable. A deployment without
+// a database URI is reported as unavailable rather than as an empty answer.
+func (s *Server) accountsReady(w http.ResponseWriter) bool {
+	if s.accounts == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "the account store is not configured"})
+		return false
+	}
+	return true
+}
+
+// gitShortcutJSON is one starred path, in the shape the console reads.
+func gitShortcutJSON(shortcut store.GitShortcut) map[string]any {
+	return map[string]any{
+		"id":       shortcut.ID,
+		"user_id":  shortcut.UserID,
+		"agent_id": shortcut.AgentID,
+		"path":     shortcut.Path,
+		"label":    shortcut.Label,
+	}
+}
+
+func (s *Server) internalListGitShortcuts(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	userID := r.PathValue("userID")
+	shortcuts, err := s.accounts.GitShortcuts(userID, r.URL.Query().Get("agent_id"))
+	if err != nil {
+		slog.Error("list git shortcuts", "user_id", userID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	out := make([]map[string]any, 0, len(shortcuts))
+	for _, shortcut := range shortcuts {
+		out = append(out, gitShortcutJSON(shortcut))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"shortcuts": out})
+}
+
+func (s *Server) internalSaveGitShortcut(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	userID := r.PathValue("userID")
+	var body struct {
+		AgentID string `json:"agent_id"`
+		Path    string `json:"path"`
+		Label   string `json:"label"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	shortcut, err := s.accounts.SaveGitShortcut(userID, body.AgentID, body.Path, body.Label)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, gitShortcutJSON(shortcut))
+}
+
+func (s *Server) internalDeleteGitShortcut(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	userID := r.PathValue("userID")
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id must be a number"})
+		return
+	}
+	if err := s.accounts.DeleteGitShortcut(userID, id); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}

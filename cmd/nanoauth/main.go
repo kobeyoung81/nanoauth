@@ -16,39 +16,41 @@ import (
 	"gitee.com/kobeyoung81/nanoauth/migrations"
 )
 
-// applyAccountManifests connects to the platform database and applies this
-// service's manifests.
+// openAccounts connects to the platform database and applies this service's
+// manifests.
 //
 // The collections are already in the platform database, created by the module
 // that used to hold the only connection, so applying the manifests is a no-op
 // there and a fresh installation gets its indexes. An unconfigured URI is
-// reported and skipped rather than fatal: nothing reads through this connection
-// yet, and refusing to start would take sign-in down with it.
-func applyAccountManifests() {
+// reported rather than fatal: the endpoints that need accounts then answer
+// "not configured", which is a clearer failure than refusing to start.
+func openAccounts() *store.Store {
 	uri := accountsMongoURI()
 	if uri == "" {
-		slog.Warn("accounts database is not configured; skipping the manifests",
+		slog.Warn("accounts database is not configured; the internal account endpoints will refuse",
 			"hint", "set NANOAUTH_MONGO_URI or NANOSEC_BUS_DATABASE_URI")
-		return
+		return nil
 	}
 	st, err := store.Open(uri)
 	if err != nil {
 		slog.Error("open accounts database", "error", err)
-		return
+		return nil
 	}
-	defer func() { _ = st.Close() }()
 
 	manifests, err := migrations.Load()
 	if err != nil {
 		slog.Error("load account manifests", "error", err)
-		return
+		_ = st.Close()
+		return nil
 	}
 	ran, err := st.Migrate(manifests)
 	if err != nil {
 		slog.Error("apply account manifests", "error", err)
-		return
+		_ = st.Close()
+		return nil
 	}
 	slog.Info("account manifests applied", "count", len(ran))
+	return st
 }
 
 // accountsMongoURI names the platform database, falling back to the bus's
@@ -104,9 +106,12 @@ func main() {
 	// the database connection is this service's. The manifests describe the
 	// indexes those collections already have; applying them to a database where
 	// another module created them is a no-op.
-	applyAccountManifests()
+	accounts := openAccounts()
+	if accounts != nil {
+		defer func() { _ = accounts.Close() }()
+	}
 
-	srv, err := server.New(cfg)
+	srv, err := server.New(cfg, accounts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create server: %v\n", err)
 		os.Exit(1)
