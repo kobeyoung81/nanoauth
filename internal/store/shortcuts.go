@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -85,12 +86,7 @@ func (s *Store) SaveGitShortcut(userID, agentID, path, label string) (GitShortcu
 	err := s.db.Collection(gitShortcutsCollection).FindOne(ctx, identity).Decode(&existing)
 	switch {
 	case err == nil:
-		if _, err := s.db.Collection(gitShortcutsCollection).UpdateOne(ctx, identity,
-			bson.D{{Key: "$set", Value: bson.D{{Key: "label", Value: label}}}}); err != nil {
-			return GitShortcut{}, fmt.Errorf("relabel git shortcut: %w", err)
-		}
-		existing.Label = label
-		return existing.shortcut(), nil
+		return s.relabelShortcut(ctx, identity, existing, label)
 	case !errors.Is(err, mongo.ErrNoDocuments):
 		return GitShortcut{}, fmt.Errorf("find git shortcut: %w", err)
 	}
@@ -105,12 +101,41 @@ func (s *Store) SaveGitShortcut(userID, agentID, path, label string) (GitShortcu
 	}
 	if _, err := s.db.Collection(gitShortcutsCollection).InsertOne(ctx, doc); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			// Another star of the same path won the race: it is an update now.
+			// Two different collisions land here. Another tab starring the same
+			// path won the race, in which case the row exists and this is a
+			// relabel; or the counter is behind the rows (it arrived from a
+			// database another module allocated) and the id itself collided.
+			if existing, found := s.findShortcut(ctx, identity); found {
+				return s.relabelShortcut(ctx, identity, existing, label)
+			}
+			if err := s.resyncSequence(ctx, gitShortcutsCollection, gitShortcutsCollection); err != nil {
+				return GitShortcut{}, err
+			}
 			return s.SaveGitShortcut(userID, agentID, path, label)
 		}
 		return GitShortcut{}, fmt.Errorf("insert git shortcut: %w", err)
 	}
 	return doc.shortcut(), nil
+}
+
+// findShortcut looks one star up by its identity.
+func (s *Store) findShortcut(ctx context.Context, identity bson.D) (storedGitShortcut, bool) {
+	var existing storedGitShortcut
+	if err := s.db.Collection(gitShortcutsCollection).FindOne(ctx, identity).Decode(&existing); err != nil {
+		return storedGitShortcut{}, false
+	}
+	return existing, true
+}
+
+// relabelShortcut writes the new label onto the row that already exists. The id is
+// what the console deletes by, so every caller comes away with the same one.
+func (s *Store) relabelShortcut(ctx context.Context, identity bson.D, existing storedGitShortcut, label string) (GitShortcut, error) {
+	if _, err := s.db.Collection(gitShortcutsCollection).UpdateOne(ctx, identity,
+		bson.D{{Key: "$set", Value: bson.D{{Key: "label", Value: label}}}}); err != nil {
+		return GitShortcut{}, fmt.Errorf("relabel git shortcut: %w", err)
+	}
+	existing.Label = label
+	return existing.shortcut(), nil
 }
 
 // DeleteGitShortcut removes one star, scoped to its owner.

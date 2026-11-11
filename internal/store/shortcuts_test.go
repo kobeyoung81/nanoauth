@@ -5,9 +5,12 @@ package store
 // eight tabs starring the same file converge on one row.
 
 import (
+	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 func TestSaveGitShortcut_StarsThenRelabels(t *testing.T) {
@@ -146,5 +149,38 @@ func TestDeleteGitShortcut_UnknownIsAnError(t *testing.T) {
 	}
 	if err := s.DeleteGitShortcut("u-2", again.ID); err == nil {
 		t.Fatal("a stranger deleted somebody's star")
+	}
+}
+
+// TestSaveGitShortcut_HealsACounterThatIsBehind: the rows arrived from a database
+// where another module allocated these ids, and the counter is keyed by collection
+// name — so a counter that started at 1 hands out ids the rows already hold. The
+// repair is the counter moving up to the data, not a failed star.
+func TestSaveGitShortcut_HealsACounterThatIsBehind(t *testing.T) {
+	s := testStore(t)
+	ctx := t.Context()
+
+	for _, id := range []int64{4, 9, 12} {
+		if _, err := s.DB().Collection("auth_git_shortcuts").InsertOne(ctx, map[string]any{
+			"_id": id, "user_id": "someone", "agent_id": "a", "path": "/legacy/" + strconv.FormatInt(id, 10),
+		}); err != nil {
+			t.Fatalf("seed row %d: %v", id, err)
+		}
+	}
+	// A counter that will hand out 4 next, which a row already holds.
+	if _, err := s.DB().Collection("sys_counters").UpdateOne(ctx,
+		map[string]any{"_id": "auth_git_shortcuts"},
+		map[string]any{"$set": map[string]any{"seq": int64(3)}},
+		options.UpdateOne().SetUpsert(true),
+	); err != nil {
+		t.Fatalf("seed counter: %v", err)
+	}
+
+	shortcut, err := s.SaveGitShortcut("u-1", "a", "/new", "")
+	if err != nil {
+		t.Fatalf("SaveGitShortcut must repair the counter: %v", err)
+	}
+	if shortcut.ID <= 12 {
+		t.Fatalf("id = %d, want one past the highest stored row (12)", shortcut.ID)
 	}
 }
