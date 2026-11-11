@@ -134,6 +134,24 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.Handle("DELETE /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalUnlinkOAuth))
 	mux.Handle("GET /internal/v1/oauth-links", s.internalGuard(s.internalListOAuthLinksByProvider))
 
+	// The account surface: the console's user page, the sign-in flow's onboarding
+	// and the runtime's questions about one account.
+	mux.Handle("POST /internal/v1/accounts/resolve", s.internalGuard(s.internalResolveAccount))
+	mux.Handle("POST /internal/v1/accounts", s.internalGuard(s.internalRegisterAccount))
+	mux.Handle("GET /internal/v1/accounts", s.internalGuard(s.internalListAccounts))
+	mux.Handle("GET /internal/v1/accounts/counts", s.internalGuard(s.internalAccountCounts))
+	mux.Handle("GET /internal/v1/accounts/{userID}", s.internalGuard(s.internalGetAccount))
+	mux.Handle("PATCH /internal/v1/accounts/{userID}", s.internalGuard(s.internalPatchAccount))
+	mux.Handle("GET /internal/v1/accounts/{userID}/password", s.internalGuard(s.internalGetPassword))
+	mux.Handle("PUT /internal/v1/accounts/{userID}/password", s.internalGuard(s.internalSetPassword))
+	mux.Handle("POST /internal/v1/accounts/{userID}/bootstrap-admin", s.internalGuard(s.internalBootstrapAdmin))
+	mux.Handle("DELETE /internal/v1/accounts/{userID}/bootstrap-admin", s.internalGuard(s.internalBootstrapAdmin))
+	mux.Handle("GET /internal/v1/accounts/{userID}/channels", s.internalGuard(s.internalChannels))
+	mux.Handle("PATCH /internal/v1/accounts/{userID}/channels/{channel}", s.internalGuard(s.internalSetChannel))
+	mux.Handle("GET /internal/v1/accounts/{userID}/info", s.internalGuard(s.internalAccountInfo))
+	mux.Handle("GET /internal/v1/accounts/{userID}/exists", s.internalGuard(s.internalUserExists))
+	mux.Handle("GET /internal/v1/bindings/{bindingID}/account", s.internalGuard(s.internalBindingOwner))
+
 	// Directory login console (read-only; the settings themselves live in
 	// service_config_items and are edited through the bus config API).
 	mux.Handle("GET /auth/v1/directory/effective", directoryAdmin(directoryHandler.HandleEffective))

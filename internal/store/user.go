@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"gitee.com/kobeyoung81/nanoauth/internal/bus"
 )
@@ -47,6 +48,8 @@ type UserRecord struct {
 	Status             string
 	Tier               string
 	MustChangePassword bool
+	PreferredLanguage  string
+	UpdatedAt          time.Time
 }
 
 // accountPayload is one account as the bus sends it.

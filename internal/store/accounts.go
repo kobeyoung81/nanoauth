@@ -28,16 +28,19 @@ var ErrAccountNotFound = errors.New("account not found")
 
 // storedUser is the user document, as far as this service reads it.
 type storedUser struct {
-	ID                string     `bson:"_id"`
-	DisplayName       string     `bson:"display_name,omitempty"`
-	Status            string     `bson:"status"`
-	Tier              string     `bson:"tier"`
-	Role              string     `bson:"role,omitempty"`
-	Email             string     `bson:"email,omitempty"`
-	PasswordHash      string     `bson:"password_hash,omitempty"`
-	MustChangePass    bool       `bson:"must_change_password,omitempty"`
-	PreferredLanguage string     `bson:"preferred_language,omitempty"`
-	PasswordChanged   *time.Time `bson:"password_changed_at,omitempty"`
+	ID                string              `bson:"_id"`
+	DisplayName       string              `bson:"display_name,omitempty"`
+	Status            string              `bson:"status"`
+	Tier              string              `bson:"tier"`
+	Role              string              `bson:"role,omitempty"`
+	Email             string              `bson:"email,omitempty"`
+	PasswordHash      string              `bson:"password_hash,omitempty"`
+	MustChangePass    bool                `bson:"must_change_password,omitempty"`
+	PreferredLanguage string              `bson:"preferred_language,omitempty"`
+	PasswordChanged   *time.Time          `bson:"password_changed_at,omitempty"`
+	Channels          []storedUserChannel `bson:"channels,omitempty"`
+	CreatedAt         time.Time           `bson:"created_at"`
+	UpdatedAt         time.Time           `bson:"updated_at"`
 }
 
 // accountProjection is the fields a sign-in answer needs. The credential is read
@@ -47,6 +50,7 @@ var accountProjection = bson.D{
 	{Key: "display_name", Value: 1}, {Key: "status", Value: 1},
 	{Key: "tier", Value: 1}, {Key: "role", Value: 1}, {Key: "email", Value: 1},
 	{Key: "must_change_password", Value: 1}, {Key: "preferred_language", Value: 1},
+	{Key: "updated_at", Value: 1},
 }
 
 // normalizeAccount fills the defaults the platform computes rather than stores.
@@ -70,6 +74,8 @@ func normalizeAccount(doc storedUser, email string) UserRecord {
 		ID: doc.ID, Email: doc.Email, DisplayName: doc.DisplayName,
 		Role: role, Tier: tier, Status: status,
 		MustChangePassword: doc.MustChangePass,
+		PreferredLanguage:  doc.PreferredLanguage,
+		UpdatedAt:          doc.UpdatedAt,
 	}
 }
 

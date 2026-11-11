@@ -71,6 +71,21 @@ func callInternal(t *testing.T, s *Server, method, target, token, body string) *
 	mux.Handle("POST /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalLinkOAuth))
 	mux.Handle("DELETE /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalUnlinkOAuth))
 	mux.Handle("GET /internal/v1/oauth-links", s.internalGuard(s.internalListOAuthLinksByProvider))
+	mux.Handle("POST /internal/v1/accounts/resolve", s.internalGuard(s.internalResolveAccount))
+	mux.Handle("POST /internal/v1/accounts", s.internalGuard(s.internalRegisterAccount))
+	mux.Handle("GET /internal/v1/accounts", s.internalGuard(s.internalListAccounts))
+	mux.Handle("GET /internal/v1/accounts/counts", s.internalGuard(s.internalAccountCounts))
+	mux.Handle("GET /internal/v1/accounts/{userID}", s.internalGuard(s.internalGetAccount))
+	mux.Handle("PATCH /internal/v1/accounts/{userID}", s.internalGuard(s.internalPatchAccount))
+	mux.Handle("GET /internal/v1/accounts/{userID}/password", s.internalGuard(s.internalGetPassword))
+	mux.Handle("PUT /internal/v1/accounts/{userID}/password", s.internalGuard(s.internalSetPassword))
+	mux.Handle("POST /internal/v1/accounts/{userID}/bootstrap-admin", s.internalGuard(s.internalBootstrapAdmin))
+	mux.Handle("DELETE /internal/v1/accounts/{userID}/bootstrap-admin", s.internalGuard(s.internalBootstrapAdmin))
+	mux.Handle("GET /internal/v1/accounts/{userID}/channels", s.internalGuard(s.internalChannels))
+	mux.Handle("PATCH /internal/v1/accounts/{userID}/channels/{channel}", s.internalGuard(s.internalSetChannel))
+	mux.Handle("GET /internal/v1/accounts/{userID}/info", s.internalGuard(s.internalAccountInfo))
+	mux.Handle("GET /internal/v1/accounts/{userID}/exists", s.internalGuard(s.internalUserExists))
+	mux.Handle("GET /internal/v1/bindings/{bindingID}/account", s.internalGuard(s.internalBindingOwner))
 
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if token != "" {
@@ -317,5 +332,120 @@ func TestInternalOAuthLinksRoundTrip(t *testing.T) {
 	// A link without a provider identity is the caller's mistake.
 	if rec := callInternal(t, s, http.MethodPost, "/internal/v1/users/u-1/oauth-links/ldap", "s3cret", `{}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestInternalAccountSurface is the console's user page end to end: register, read,
+// patch the fields each form sends, set and read the credential, count, and the
+// onboarding path that creates a pending account from a channel identity.
+func TestInternalAccountSurface(t *testing.T) {
+	s := testAccounts(t, "s3cret")
+	ctx := t.Context()
+
+	// Onboarding: a channel identity nobody owns becomes a pending account.
+	rec := callInternal(t, s, http.MethodPost, "/internal/v1/accounts/resolve", "s3cret",
+		`{"channel":"web","sender_id":"sender-1"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resolve: %d %s", rec.Code, rec.Body.String())
+	}
+	var resolved struct {
+		UserID    string `json:"user_id"`
+		BindingID int64  `json:"binding_id"`
+		IsNew     bool   `json:"is_new"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resolved); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resolved.IsNew || resolved.UserID == "" || resolved.BindingID == 0 {
+		t.Fatalf("unexpected onboarding answer: %+v", resolved)
+	}
+	// The same identity resolves to the same account, not a second one.
+	rec = callInternal(t, s, http.MethodPost, "/internal/v1/accounts/resolve", "s3cret",
+		`{"channel":"web","sender_id":"sender-1"}`)
+	var again struct {
+		UserID string `json:"user_id"`
+		IsNew  bool   `json:"is_new"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &again)
+	if again.IsNew || again.UserID != resolved.UserID {
+		t.Fatalf("the identity was not stable: %+v after %+v", again, resolved)
+	}
+
+	// The console's own registration, then the fields its forms send.
+	if rec := callInternal(t, s, http.MethodPost, "/internal/v1/accounts", "s3cret",
+		`{"user_id":"u-1","display_name":"Ada"}`); rec.Code != http.StatusOK {
+		t.Fatalf("register: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := callInternal(t, s, http.MethodPatch, "/internal/v1/accounts/u-1", "s3cret",
+		`{"role":"admin","tier":"pro","status":"active","preferred_language":"en","email":"ada@example.test"}`); rec.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = callInternal(t, s, http.MethodGet, "/internal/v1/accounts/u-1", "s3cret", "")
+	var account map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &account); err != nil {
+		t.Fatalf("decode account: %v", err)
+	}
+	if account["role"] != "admin" || account["tier"] != "pro" || account["display_name"] != "Ada" || account["preferred_language"] != "en" {
+		t.Fatalf("the patch did not stick: %+v", account)
+	}
+
+	// The credential: written by a reset, read back only for the comparison.
+	if rec := callInternal(t, s, http.MethodPut, "/internal/v1/accounts/u-1/password", "s3cret",
+		`{"password_hash":"hash-1","must_change_password":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("password: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = callInternal(t, s, http.MethodGet, "/internal/v1/accounts/u-1/password", "s3cret", "")
+	var password struct {
+		Hash string `json:"password_hash"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &password)
+	if password.Hash != "hash-1" {
+		t.Fatalf("password hash = %q", password.Hash)
+	}
+
+	// Channels, and the "does this account exist" the console asks before creating.
+	rec = callInternal(t, s, http.MethodGet, "/internal/v1/accounts/"+resolved.UserID+"/channels", "s3cret", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "web") {
+		t.Fatalf("channels: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := callInternal(t, s, http.MethodPatch, "/internal/v1/accounts/"+resolved.UserID+"/channels/web", "s3cret", `{"enabled":false}`); rec.Code != http.StatusOK {
+		t.Fatalf("disable channel: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = callInternal(t, s, http.MethodPost, "/internal/v1/accounts/resolve", "s3cret",
+		`{"channel":"web","sender_id":"sender-1"}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("a disabled channel resolved: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = callInternal(t, s, http.MethodGet, "/internal/v1/accounts/counts", "s3cret", "")
+	var counts struct {
+		Active int            `json:"active"`
+		Admins int            `json:"admins"`
+		Tiers  map[string]int `json:"tiers"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &counts)
+	if counts.Admins != 1 || counts.Tiers["pro"] != 1 {
+		t.Fatalf("counts: %+v", counts)
+	}
+
+	_ = ctx
+}
+
+// TestInternalAccountSurfaceRejectsBadCalls: the fields are the point, and a
+// missing account is a 404 the console can show as such.
+func TestInternalAccountSurfaceRejectsBadCalls(t *testing.T) {
+	s := testAccounts(t, "s3cret")
+
+	if rec := callInternal(t, s, http.MethodPost, "/internal/v1/accounts", "s3cret", `{}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 without a user id", rec.Code)
+	}
+	if rec := callInternal(t, s, http.MethodPost, "/internal/v1/accounts/resolve", "s3cret", `{"channel":"web"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 without a sender", rec.Code)
+	}
+	if rec := callInternal(t, s, http.MethodPatch, "/internal/v1/accounts/ghost", "s3cret", `{"role":"admin"}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for a missing account", rec.Code)
+	}
+	if rec := callInternal(t, s, http.MethodGet, "/internal/v1/bindings/abc/account", "s3cret", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a non-numeric binding id", rec.Code)
 	}
 }
