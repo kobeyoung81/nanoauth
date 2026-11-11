@@ -7,11 +7,59 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"gitee.com/kobeyoung81/nanoauth/internal/config"
 	"gitee.com/kobeyoung81/nanoauth/internal/server"
+	"gitee.com/kobeyoung81/nanoauth/internal/store"
+	"gitee.com/kobeyoung81/nanoauth/migrations"
 )
+
+// applyAccountManifests connects to the platform database and applies this
+// service's manifests.
+//
+// The collections are already in the platform database, created by the module
+// that used to hold the only connection, so applying the manifests is a no-op
+// there and a fresh installation gets its indexes. An unconfigured URI is
+// reported and skipped rather than fatal: nothing reads through this connection
+// yet, and refusing to start would take sign-in down with it.
+func applyAccountManifests() {
+	uri := accountsMongoURI()
+	if uri == "" {
+		slog.Warn("accounts database is not configured; skipping the manifests",
+			"hint", "set NANOAUTH_MONGO_URI or NANOSEC_BUS_DATABASE_URI")
+		return
+	}
+	st, err := store.Open(uri)
+	if err != nil {
+		slog.Error("open accounts database", "error", err)
+		return
+	}
+	defer func() { _ = st.Close() }()
+
+	manifests, err := migrations.Load()
+	if err != nil {
+		slog.Error("load account manifests", "error", err)
+		return
+	}
+	ran, err := st.Migrate(manifests)
+	if err != nil {
+		slog.Error("apply account manifests", "error", err)
+		return
+	}
+	slog.Info("account manifests applied", "count", len(ran))
+}
+
+// accountsMongoURI names the platform database, falling back to the bus's
+// variable so a deployment only has to fill in one URI. The collection prefix is
+// what separates modules, not the credentials.
+func accountsMongoURI() string {
+	if v := strings.TrimSpace(os.Getenv("NANOAUTH_MONGO_URI")); v != "" {
+		return v
+	}
+	return strings.TrimSpace(os.Getenv("NANOSEC_BUS_DATABASE_URI"))
+}
 
 func main() {
 	cfg := config.DefaultConfig()
@@ -51,6 +99,12 @@ func main() {
 	if wechatSecret := os.Getenv("NANOAUTH_WECHAT_APP_SECRET"); wechatSecret != "" {
 		cfg.WeChat.AppSecret = wechatSecret
 	}
+
+	// Accounts, channel links, OAuth links and refresh tickets are identity's, so
+	// the database connection is this service's. The manifests describe the
+	// indexes those collections already have; applying them to a database where
+	// another module created them is a no-op.
+	applyAccountManifests()
 
 	srv, err := server.New(cfg)
 	if err != nil {
