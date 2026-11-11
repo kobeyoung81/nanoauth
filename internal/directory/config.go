@@ -64,8 +64,8 @@ const DefaultTTL = 30 * time.Second
 // DefaultTTL, so an edit made in the portal takes effect without restarting
 // nanoauth.
 //
-// The store is the bus's collection now: this service reads its own configuration
-// back through the bus's API, the same way the console edits it.
+// The configuration lives in the admin module: this service reads its own
+// component back over HTTP, from the same store the console edits.
 type Loader struct {
 	bus *bus.Client
 	ttl time.Duration
