@@ -126,6 +126,9 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.Handle("GET /internal/v1/users/{userID}/git-shortcuts", s.internalGuard(s.internalListGitShortcuts))
 	mux.Handle("POST /internal/v1/users/{userID}/git-shortcuts", s.internalGuard(s.internalSaveGitShortcut))
 	mux.Handle("DELETE /internal/v1/users/{userID}/git-shortcuts/{id}", s.internalGuard(s.internalDeleteGitShortcut))
+	mux.Handle("GET /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalListSecrets))
+	mux.Handle("PUT /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalSetSecret))
+	mux.Handle("DELETE /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalDeleteSecret))
 
 	// Directory login console (read-only; the settings themselves live in
 	// service_config_items and are edited through the bus config API).

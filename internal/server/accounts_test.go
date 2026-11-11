@@ -64,6 +64,9 @@ func callInternal(t *testing.T, s *Server, method, target, token, body string) *
 	mux.Handle("GET /internal/v1/users/{userID}/git-shortcuts", s.internalGuard(s.internalListGitShortcuts))
 	mux.Handle("POST /internal/v1/users/{userID}/git-shortcuts", s.internalGuard(s.internalSaveGitShortcut))
 	mux.Handle("DELETE /internal/v1/users/{userID}/git-shortcuts/{id}", s.internalGuard(s.internalDeleteGitShortcut))
+	mux.Handle("GET /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalListSecrets))
+	mux.Handle("PUT /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalSetSecret))
+	mux.Handle("DELETE /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalDeleteSecret))
 
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if token != "" {
@@ -183,3 +186,75 @@ func TestInternalEndpointsReportAnUnconfiguredStore(t *testing.T) {
 }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
+
+// TestInternalSecretsRoundTrip is the console's path end to end: store a value,
+// read it back, replace it in place, remove it. The values come back unmasked
+// because masking is the console's own step.
+func TestInternalSecretsRoundTrip(t *testing.T) {
+	s := testAccounts(t, "s3cret")
+	base := "/internal/v1/users/u-1/secrets/mcp/mcp:github"
+
+	if rec := callInternal(t, s, http.MethodPut, base, "s3cret", `{"key":"TOKEN","value":"sk-1"}`); rec.Code != http.StatusOK {
+		t.Fatalf("store: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := callInternal(t, s, http.MethodPut, base, "s3cret", `{"key":"TOKEN","value":"sk-2"}`); rec.Code != http.StatusOK {
+		t.Fatalf("replace: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec := callInternal(t, s, http.MethodGet, base, "s3cret", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	var listed struct {
+		Secrets map[string]string `json:"secrets"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(listed.Secrets) != 1 || listed.Secrets["TOKEN"] != "sk-2" {
+		t.Fatalf("the value was not replaced in place: %+v", listed.Secrets)
+	}
+
+	// Another user, and another capability, see nothing.
+	if rec := callInternal(t, s, http.MethodGet, "/internal/v1/users/u-2/secrets/mcp/mcp:github", "s3cret", ""); rec.Code != http.StatusOK {
+		t.Fatalf("other user: %d", rec.Code)
+	} else {
+		var other struct {
+			Secrets map[string]string `json:"secrets"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &other)
+		if len(other.Secrets) != 0 {
+			t.Fatalf("another user saw secrets: %+v", other.Secrets)
+		}
+	}
+
+	if rec := callInternal(t, s, http.MethodDelete, base+"?key=TOKEN", "s3cret", ""); rec.Code != http.StatusOK {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = callInternal(t, s, http.MethodGet, base, "s3cret", "")
+	var after struct {
+		Secrets map[string]string `json:"secrets"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &after)
+	if len(after.Secrets) != 0 {
+		t.Fatalf("the secret survived: %+v", after.Secrets)
+	}
+}
+
+// TestInternalSecretsRejectABadCall: the value is the point, and a delete needs to
+// say which key.
+func TestInternalSecretsRejectABadCall(t *testing.T) {
+	s := testAccounts(t, "s3cret")
+	base := "/internal/v1/users/u-1/secrets/mcp/mcp:github"
+
+	if rec := callInternal(t, s, http.MethodPut, base, "s3cret", `{"key":"TOKEN"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a missing value", rec.Code)
+	}
+	if rec := callInternal(t, s, http.MethodDelete, base, "s3cret", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a missing key", rec.Code)
+	}
+	// The same guard as the rest of the surface.
+	if rec := callInternal(t, s, http.MethodGet, base, "", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 without a token", rec.Code)
+	}
+}

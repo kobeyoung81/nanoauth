@@ -124,3 +124,61 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
 }
+
+// ======== per-user capability secrets ========
+
+// internalListSecrets answers with the values themselves: masking is the console's
+// job, and this face is only reachable with the platform token.
+func (s *Server) internalListSecrets(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	secrets, err := s.accounts.ListUserSecrets(r.PathValue("userID"), r.PathValue("kind"), r.PathValue("ref"))
+	if err != nil {
+		slog.Error("list user secrets", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"secrets": secrets})
+}
+
+func (s *Server) internalSetSecret(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	var body struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if body.Key == "" || body.Value == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "key and value are required"})
+		return
+	}
+	if err := s.accounts.UpsertUserSecret(r.PathValue("userID"), r.PathValue("kind"), r.PathValue("ref"), body.Key, body.Value); err != nil {
+		slog.Error("set user secret", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+func (s *Server) internalDeleteSecret(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "key is required"})
+		return
+	}
+	if err := s.accounts.DeleteUserSecret(r.PathValue("userID"), r.PathValue("kind"), r.PathValue("ref"), key); err != nil {
+		slog.Error("delete user secret", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
