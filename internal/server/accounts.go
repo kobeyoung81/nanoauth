@@ -182,3 +182,75 @@ func (s *Server) internalDeleteSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
+
+// ======== identity links ========
+
+func (s *Server) internalListOAuthLinks(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	links, err := s.accounts.OAuthLinks(r.PathValue("userID"))
+	if err != nil {
+		slog.Error("list oauth links", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"links": linkPayloads(links)})
+}
+
+func (s *Server) internalListOAuthLinksByProvider(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	links, err := s.accounts.OAuthProviderLinks(r.URL.Query().Get("provider"))
+	if err != nil {
+		slog.Error("list oauth links by provider", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"links": linkPayloads(links)})
+}
+
+func (s *Server) internalLinkOAuth(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	var body struct {
+		ProviderID string `json:"provider_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if body.ProviderID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provider_id is required"})
+		return
+	}
+	if err := s.accounts.LinkOAuth(r.PathValue("userID"), r.PathValue("provider"), body.ProviderID); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "linked"})
+}
+
+func (s *Server) internalUnlinkOAuth(w http.ResponseWriter, r *http.Request) {
+	if !s.accountsReady(w) {
+		return
+	}
+	if err := s.accounts.UnlinkOAuth(r.PathValue("userID"), r.PathValue("provider")); err != nil {
+		slog.Error("unlink oauth", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "unlinked"})
+}
+
+func linkPayloads(links []store.OAuthLink) []map[string]string {
+	out := make([]map[string]string, 0, len(links))
+	for _, link := range links {
+		out = append(out, map[string]string{
+			"user_id": link.UserID, "provider": link.Provider, "provider_id": link.ProviderID,
+		})
+	}
+	return out
+}

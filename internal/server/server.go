@@ -129,6 +129,10 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.Handle("GET /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalListSecrets))
 	mux.Handle("PUT /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalSetSecret))
 	mux.Handle("DELETE /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalDeleteSecret))
+	mux.Handle("GET /internal/v1/users/{userID}/oauth-links", s.internalGuard(s.internalListOAuthLinks))
+	mux.Handle("POST /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalLinkOAuth))
+	mux.Handle("DELETE /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalUnlinkOAuth))
+	mux.Handle("GET /internal/v1/oauth-links", s.internalGuard(s.internalListOAuthLinksByProvider))
 
 	// Directory login console (read-only; the settings themselves live in
 	// service_config_items and are edited through the bus config API).

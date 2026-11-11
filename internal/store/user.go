@@ -357,6 +357,9 @@ func (s *UserStore) CreateWithOAuth(ctx context.Context, provider, providerID, d
 // upserts on (provider, provider_id), which is what the SQL's ON DUPLICATE KEY
 // meant: one identity, one account.
 func (s *UserStore) LinkOAuth(ctx context.Context, userID, provider, providerID string) error {
+	if s.accounts != nil {
+		return s.accounts.LinkOAuth(userID, provider, providerID)
+	}
 	body := map[string]string{"provider": provider, "provider_id": providerID}
 	path := "/api/v1/users/" + url.PathEscape(userID) + "/oauth-links"
 	if err := s.bus.Do(ctx, http.MethodPost, path, body, nil); err != nil {

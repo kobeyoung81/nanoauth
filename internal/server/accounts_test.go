@@ -67,6 +67,10 @@ func callInternal(t *testing.T, s *Server, method, target, token, body string) *
 	mux.Handle("GET /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalListSecrets))
 	mux.Handle("PUT /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalSetSecret))
 	mux.Handle("DELETE /internal/v1/users/{userID}/secrets/{kind}/{ref}", s.internalGuard(s.internalDeleteSecret))
+	mux.Handle("GET /internal/v1/users/{userID}/oauth-links", s.internalGuard(s.internalListOAuthLinks))
+	mux.Handle("POST /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalLinkOAuth))
+	mux.Handle("DELETE /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalUnlinkOAuth))
+	mux.Handle("GET /internal/v1/oauth-links", s.internalGuard(s.internalListOAuthLinksByProvider))
 
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if token != "" {
@@ -256,5 +260,62 @@ func TestInternalSecretsRejectABadCall(t *testing.T) {
 	// The same guard as the rest of the surface.
 	if rec := callInternal(t, s, http.MethodGet, base, "", ""); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401 without a token", rec.Code)
+	}
+}
+
+// TestInternalOAuthLinksRoundTrip is the console's directory page and the sign-in
+// flow's question: link an identity, read it back two ways, unlink it.
+func TestInternalOAuthLinksRoundTrip(t *testing.T) {
+	s := testAccounts(t, "s3cret")
+
+	if rec := callInternal(t, s, http.MethodPost, "/internal/v1/users/u-1/oauth-links/ldap", "s3cret",
+		`{"provider_id":"cn=ada"}`); rec.Code != http.StatusOK {
+		t.Fatalf("link: %d %s", rec.Code, rec.Body.String())
+	}
+	// Re-linking the same identity is idempotent (one identity, one account).
+	if rec := callInternal(t, s, http.MethodPost, "/internal/v1/users/u-1/oauth-links/ldap", "s3cret",
+		`{"provider_id":"cn=ada"}`); rec.Code != http.StatusOK {
+		t.Fatalf("relink: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec := callInternal(t, s, http.MethodGet, "/internal/v1/users/u-1/oauth-links", "s3cret", "")
+	var byUser struct {
+		Links []struct {
+			Provider   string `json:"provider"`
+			ProviderID string `json:"provider_id"`
+		} `json:"links"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &byUser); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(byUser.Links) != 1 || byUser.Links[0].ProviderID != "cn=ada" {
+		t.Fatalf("links by user: %+v", byUser.Links)
+	}
+
+	rec = callInternal(t, s, http.MethodGet, "/internal/v1/oauth-links?provider=ldap", "s3cret", "")
+	var byProvider struct {
+		Links []struct {
+			UserID string `json:"user_id"`
+		} `json:"links"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &byProvider); err != nil {
+		t.Fatalf("decode roster: %v", err)
+	}
+	if len(byProvider.Links) != 1 || byProvider.Links[0].UserID != "u-1" {
+		t.Fatalf("roster: %+v", byProvider.Links)
+	}
+
+	if rec := callInternal(t, s, http.MethodDelete, "/internal/v1/users/u-1/oauth-links/ldap", "s3cret", ""); rec.Code != http.StatusOK {
+		t.Fatalf("unlink: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = callInternal(t, s, http.MethodGet, "/internal/v1/users/u-1/oauth-links", "s3cret", "")
+	_ = json.Unmarshal(rec.Body.Bytes(), &byUser)
+	if len(byUser.Links) != 0 {
+		t.Fatalf("the link survived: %+v", byUser.Links)
+	}
+
+	// A link without a provider identity is the caller's mistake.
+	if rec := callInternal(t, s, http.MethodPost, "/internal/v1/users/u-1/oauth-links/ldap", "s3cret", `{}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
