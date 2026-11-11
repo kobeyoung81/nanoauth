@@ -15,18 +15,27 @@ import (
 // login flow retries such a race as a link rather than a new account.
 var ErrEmailTaken = errors.New("email already taken")
 
-// UserStore reads and writes accounts through the bus.
+// UserStore is the account store the handlers use.
 //
-// It used to open `users`, `oauth_providers` and `audit_log` itself. Those tables
-// belong to the bus now, which is the only service with a database connection, so
-// this store is a client: the method set is unchanged — the handlers never knew
-// where the rows lived — and the SQL is gone with the connection.
+// The documents are identity's and live in the platform database, which this
+// service now holds: the reads go straight there (accounts.go). The writes still
+// go through the bus, which is the account writer until its surface moves — the
+// split is one field at a time, and this type is where it shows.
 type UserStore struct {
 	bus *bus.Client
+	// accounts is the database. It is nil in a deployment without a URI, in which
+	// case even the reads fall back to the bus.
+	accounts *Store
 }
 
 func NewUserStore(client *bus.Client) *UserStore {
 	return &UserStore{bus: client}
+}
+
+// WithAccounts attaches the database. Without it every method asks the bus.
+func (s *UserStore) WithAccounts(accounts *Store) *UserStore {
+	s.accounts = accounts
+	return s
 }
 
 type UserRecord struct {
@@ -78,6 +87,19 @@ func (p accountPayload) record() UserRecord {
 // read it), and the sign-in path is not hot enough to argue about one more
 // round trip inside the same host.
 func (s *UserStore) GetByEmail(ctx context.Context, email string) (*UserRecord, error) {
+	if s.accounts != nil {
+		record, err := s.accounts.AccountByEmail(email)
+		if err != nil || record == nil {
+			return record, err
+		}
+		hash, err := s.accounts.PasswordHash(record.ID)
+		if err != nil {
+			return nil, err
+		}
+		record.PasswordHash = hash
+		return record, nil
+	}
+
 	var payload struct {
 		Users []accountPayload `json:"users"`
 	}
@@ -98,6 +120,19 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*UserRecord, 
 }
 
 func (s *UserStore) GetByID(ctx context.Context, id string) (*UserRecord, error) {
+	if s.accounts != nil {
+		record, err := s.accounts.AccountByID(id)
+		if err != nil || record == nil {
+			return record, err
+		}
+		hash, err := s.accounts.PasswordHash(record.ID)
+		if err != nil {
+			return nil, err
+		}
+		record.PasswordHash = hash
+		return record, nil
+	}
+
 	var payload accountPayload
 	path := "/api/v1/user-accounts/" + url.PathEscape(id)
 	if err := s.bus.Do(ctx, http.MethodGet, path, nil, &payload); err != nil {
@@ -152,6 +187,18 @@ type linkPayload struct {
 }
 
 func (s *UserStore) links(ctx context.Context, userID string) ([]linkPayload, error) {
+	if s.accounts != nil {
+		links, err := s.accounts.OAuthLinks(userID)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]linkPayload, 0, len(links))
+		for _, link := range links {
+			out = append(out, linkPayload{Provider: link.Provider, ProviderID: link.ProviderID})
+		}
+		return out, nil
+	}
+
 	var payload struct {
 		Links []linkPayload `json:"links"`
 	}
@@ -257,6 +304,19 @@ func (s *UserStore) patch(ctx context.Context, userID string, fields map[string]
 // GetByOAuthProvider returns the user linked to an OAuth provider identity
 // (e.g. a WeChat openid), or nil if none exists.
 func (s *UserStore) GetByOAuthProvider(ctx context.Context, provider, providerID string) (*UserRecord, error) {
+	if s.accounts != nil {
+		record, err := s.accounts.AccountByOAuthLink(provider, providerID)
+		if err != nil || record == nil {
+			return record, err
+		}
+		hash, err := s.accounts.PasswordHash(record.ID)
+		if err != nil {
+			return nil, err
+		}
+		record.PasswordHash = hash
+		return record, nil
+	}
+
 	query := url.Values{}
 	query.Set("provider", provider)
 	query.Set("provider_id", providerID)

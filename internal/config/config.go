@@ -2,13 +2,13 @@ package config
 
 type AuthConfig struct {
 	ServerAddr string `mapstructure:"server_addr"`
-	// The bus owns every collection this service reads; these two are the whole
-	// storage configuration. There is no DSN to point anywhere.
-	BusURL          string `mapstructure:"bus_url"`
-	BusToken        string `mapstructure:"bus_token"`
+	// The bus still answers the account surface this service has not taken over;
+	// these two are its address and the platform's shared token.
+	BusURL   string `mapstructure:"bus_url"`
+	BusToken string `mapstructure:"bus_token"`
 	// AdminURL is the admin module, which owns the configuration this service
 	// reads and writes (the JWT keypair, the directory settings).
-	AdminURL string `mapstructure:"admin_url"`
+	AdminURL        string `mapstructure:"admin_url"`
 	RefreshTokenTTL int    `mapstructure:"refresh_token_ttl"` // seconds, default 604800 (7d)
 	JWT             JWTConfig
 	WeChat          WeChatConfig `mapstructure:"wechat"`
