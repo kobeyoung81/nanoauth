@@ -26,17 +26,17 @@ import (
 // arrives over HTTP.
 type Server struct {
 	cfg      config.AuthConfig
-	bus      *bus.Client
 	accounts *store.Store
 	httpSrv  *http.Server
 }
 
 // New builds the service. accounts may be nil (no database configured).
+//
+// There is no bus client here: the identity collections are this service's, and
+// the only other module it talks to is the admin module (configuration and the
+// audit trail), which it builds in Start.
 func New(cfg config.AuthConfig, accounts *store.Store) (*Server, error) {
-	if cfg.BusURL == "" {
-		return nil, fmt.Errorf("bus URL is required")
-	}
-	return &Server{cfg: cfg, bus: bus.New(cfg.BusURL, cfg.BusToken), accounts: accounts}, nil
+	return &Server{cfg: cfg, accounts: accounts}, nil
 }
 
 // loadJWTKeyWithRetry tolerates an admin module that is still starting: the key
@@ -91,7 +91,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	userStore := store.NewUserStore(s.accounts).WithAdmin(admin)
-	tokenStore := store.NewTokenStore(s.bus).WithAccounts(s.accounts)
+	tokenStore := store.NewTokenStore(s.accounts)
 	tokenStore.SetTTL(time.Duration(s.cfg.RefreshTokenTTL) * time.Second)
 
 	// The directory login reads its settings from the shared config store, so an

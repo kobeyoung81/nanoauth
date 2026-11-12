@@ -1,13 +1,12 @@
-package accounttest
+package fakestore
 
-// An in-memory account store for the HTTP tests.
+// In-memory stores for the HTTP tests.
 //
-// The user store holds the identity database directly, so a handler test needs
-// something that answers the store's account calls without a database. This
-// wraps the fake bus's account state — the maps the fake already keeps for its
-// REST handlers — and speaks the store's AccountStore to it, so a test seeds an
-// account the way it always did (`stub.AddAccount`, `stub.SetLinks`) and both
-// the handler's store and the fake's HTTP paths see it.
+// The user and ticket stores hold the identity database directly, so a handler
+// test needs something that answers their calls without a database. These wrap
+// the fake bus's state — the accounts, links and tickets it keeps — and speak the
+// stores' interfaces to it, so a test seeds the way it always did
+// (`stub.AddAccount`, `stub.SetLinks`, `stub.StoreToken`).
 //
 // It is a test double, not a second implementation: the semantics that matter —
 // the unique address, the one-shot administrator claim, the column defaults —
@@ -16,6 +15,7 @@ package accounttest
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"gitee.com/kobeyoung81/nanoauth/internal/bustest"
 	"gitee.com/kobeyoung81/nanoauth/internal/store"
@@ -29,8 +29,11 @@ type Accounts struct {
 	claimed bool
 }
 
-// New wraps a fake bus.
-func New(bus *bustest.Bus) *Accounts { return &Accounts{bus: bus} }
+// NewAccounts wraps a fake bus's account state.
+func NewAccounts(bus *bustest.Bus) *Accounts { return &Accounts{bus: bus} }
+
+// NewTickets wraps the same fake's refresh tickets.
+func NewTickets(bus *bustest.Bus) *Tickets { return &Tickets{bus: bus} }
 
 func (a *Accounts) RegisterUser(userID, displayName string) error {
 	if a.bus.Account(userID) == nil {
@@ -190,4 +193,31 @@ func record(account map[string]any) *store.UserRecord {
 		out.MustChangePassword = value
 	}
 	return out
+}
+
+// Tickets is the refresh-ticket collection over the fake's token map.
+type Tickets struct {
+	bus *bustest.Bus
+}
+
+func (t *Tickets) SaveRefreshToken(tokenHash, userID string, expiresAt time.Time) error {
+	t.bus.StoreToken(tokenHash, userID, expiresAt)
+	return nil
+}
+
+func (t *Tickets) RefreshToken(tokenHash string) (string, time.Time, bool, error) {
+	ticket, ok := t.bus.Token(tokenHash)
+	if !ok {
+		return "", time.Time{}, false, nil
+	}
+	expiresAt, err := time.Parse(time.RFC3339, ticket["expires_at"])
+	if err != nil {
+		return "", time.Time{}, false, err
+	}
+	return ticket["user_id"], expiresAt, true, nil
+}
+
+func (t *Tickets) DeleteRefreshToken(tokenHash string) error {
+	t.bus.DeleteToken(tokenHash)
+	return nil
 }

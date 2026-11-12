@@ -37,8 +37,8 @@ Loaded from environment variables (prefix: `NANOAUTH_`). Defaults are defined in
 | Variable                     | Default          | Description                          |
 |------------------------------|------------------|--------------------------------------|
 | `NANOAUTH_ADDR`              | `:8081`          | HTTP listen address                  |
-| `NANOAUTH_BUS_URL`           | `http://127.0.0.1:9000` | nanobus base URL (the store's only door) |
-| `NANOSEC_BUS_INTERNAL_TOKEN` |                  | shared token presented to the bus    |
+| `NANOSEC_ADMIN_URL`          | `http://nanoadmin:8080` | admin module: its configuration and the audit trail |
+| `NANOSEC_BUS_INTERNAL_TOKEN` |                  | shared token presented to the admin module |
 | `NANOAUTH_JWT_KEY_ID`        | `2026-08`        | JWT `kid` header                     |
 | `NANOAUTH_JWT_KEY_BITS`      | `2048`           | RSA modulus size for the generated keypair |
 | `NANOAUTH_WECHAT_APP_ID`     |                  | WeChat Mini Program app ID           |
@@ -148,8 +148,9 @@ Provisioning and linking each write an `audit_log` row
 go build ./cmd/nanoauth
 
 NANOAUTH_ADDR=:8081 \
-NANOAUTH_BUS_URL="http://localhost:9000" \
+NANOSEC_ADMIN_URL="http://localhost:14404" \
 NANOSEC_BUS_INTERNAL_TOKEN="<the deployment's shared token>" \
+NANOSEC_BUS_DATABASE_URI="mongodb://…/nanosec" \
 ./nanoauth
 ```
 
@@ -158,13 +159,15 @@ NANOSEC_BUS_INTERNAL_TOKEN="<the deployment's shared token>" \
 ```bash
 docker build -t nanoauth .
 docker run -p 8081:8081 \
-  -e NANOAUTH_BUS_URL=http://nanobus:9000 \
+  -e NANOSEC_ADMIN_URL=http://nanoadmin:8080 \
   -e NANOSEC_BUS_INTERNAL_TOKEN=... \
+  -e NANOSEC_BUS_DATABASE_URI="mongodb://…/nanosec" \
   nanoauth
 ```
 
 In the top-level `docker-compose.yml` no keys are mounted — `nanoauth` bootstraps its
-keypair through the bus.
+keypair into the platform configuration, which it reads and writes through the admin
+module.
 
 ## Scope
 

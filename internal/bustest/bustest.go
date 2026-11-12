@@ -1,13 +1,15 @@
 package bustest
 
-// Package bustest is a fake bus for nanoauth's tests.
+// Package bustest is the fake the auth service's tests seed.
 //
-// nanoauth's stores are clients now, so what has to be pinned is *what they ask
-// for and how they read the answer* — a database mock would pin SQL text that no
-// longer exists. The fake keeps just enough state for that: accounts, directory
-// links, refresh tickets, configuration and the audit log. It is a package (not a
-// _test file) so the store, handler and integration tests can share one fake,
-// the same way the bus's own storetest is shared.
+// It is two things in one: the state a test writes (accounts, directory links,
+// refresh tickets) and the two HTTP surfaces a service still asks over the wire
+// (configuration, which the admin module serves, and the audit trail, which this
+// fake records). The identity collections are reached through the stores now, so
+// the fake no longer answers them over HTTP — internal/fakestore adapts this
+// state to those stores. It is a package rather than a _test file so the store,
+// handler and integration tests can share it, the way the bus's own storetest is
+// shared.
 
 import (
 	"encoding/json"
@@ -32,9 +34,8 @@ type Bus struct {
 	failAccountRead  bool
 	requests         []string
 	bootstrapClaimed bool
-	// newAccountRole is the role the fake gives an account created through its
-	// POST /users. The real bus decides this (the first sign-up becomes an
-	// administrator); a test that cares sets it explicitly.
+	// newAccountRole is the role the fake gives an account it seeds. A test whose
+	// subject is the role of a fresh sign-up sets it explicitly.
 	newAccountRole string
 }
 
@@ -102,6 +103,21 @@ func (b *Bus) Tokens() map[string]map[string]string {
 		out[hash] = token
 	}
 	return out
+}
+
+// Token returns one stored ticket and whether it is there.
+func (b *Bus) Token(hash string) (map[string]string, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	ticket, ok := b.tokens[hash]
+	return ticket, ok
+}
+
+// DeleteToken removes a ticket — what rotation and logout do.
+func (b *Bus) DeleteToken(hash string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.tokens, hash)
 }
 
 // StoreToken seeds a refresh ticket directly (hash → owner, expiry).
@@ -201,9 +217,7 @@ func (b *Bus) Entries() []map[string]any {
 func (b *Bus) handle(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
 	b.requests = append(b.requests, r.Method+" "+r.URL.Path)
-	fail := (b.failRead && r.Method == http.MethodGet) ||
-		(b.failAccountRead && r.Method == http.MethodGet &&
-			strings.HasPrefix(r.URL.Path, "/api/v1/user-accounts/"))
+	fail := b.failRead && r.Method == http.MethodGet
 	b.mu.Unlock()
 	if fail {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -212,37 +226,10 @@ func (b *Bus) handle(w http.ResponseWriter, r *http.Request) {
 
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1")
 	switch {
-	case r.Method == http.MethodGet && path == "/user-accounts":
-		b.listAccounts(w, r)
-	case r.Method == http.MethodGet && strings.HasPrefix(path, "/user-accounts/") && strings.HasSuffix(path, "/password-hash"):
-		id := strings.TrimSuffix(strings.TrimPrefix(path, "/user-accounts/"), "/password-hash")
-		b.writeAccountField(w, id, "password_hash")
-	case r.Method == http.MethodGet && strings.HasPrefix(path, "/user-accounts/"):
-		b.writeAccount(w, strings.TrimPrefix(path, "/user-accounts/"))
-	case r.Method == http.MethodPatch && strings.HasPrefix(path, "/user-accounts/"):
-		b.patchAccount(w, r, strings.TrimPrefix(path, "/user-accounts/"))
-	case r.Method == http.MethodPut && strings.HasPrefix(path, "/user-accounts/"):
-		b.putPassword(w, r, strings.TrimPrefix(strings.TrimSuffix(path, "/password"), "/user-accounts/"))
-	case r.Method == http.MethodPost && path == "/users":
-		b.createAccount(w, r)
-	// The bare /oauth-links is the identity lookup; the /users/<id>/ one is the
-	// account's links. Order matters: the lookup would otherwise be swallowed.
-	case r.Method == http.MethodGet && path == "/oauth-links":
-		b.lookupLink(w, r)
-	case r.Method == http.MethodGet && strings.HasPrefix(path, "/users/") && strings.HasSuffix(path, "/oauth-links"):
-		b.listLinks(w, strings.TrimSuffix(strings.TrimPrefix(path, "/users/"), "/oauth-links"))
-	case r.Method == http.MethodPost && strings.HasPrefix(path, "/users/") && strings.HasSuffix(path, "/oauth-links"):
-		b.link(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "/users/"), "/oauth-links"))
 	// The admin module owns the trail; the bus only forwards there. One fake
 	// serves both shapes so a test can point either client at it.
 	case r.Method == http.MethodPost && (path == "/audit" || path == "/internal/audit"):
 		b.recordAudit(w, r)
-	case r.Method == http.MethodPost && path == "/auth/refresh-tokens":
-		b.storeToken(w, r)
-	case r.Method == http.MethodGet && strings.HasPrefix(path, "/auth/refresh-tokens/"):
-		b.readToken(w, strings.TrimPrefix(path, "/auth/refresh-tokens/"))
-	case r.Method == http.MethodDelete && strings.HasPrefix(path, "/auth/refresh-tokens/"):
-		b.deleteToken(w, strings.TrimPrefix(path, "/auth/refresh-tokens/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/config/"):
 		b.readConfig(w, strings.TrimPrefix(path, "/config/"))
 	case r.Method == http.MethodPut && strings.HasPrefix(path, "/config/"):
@@ -257,146 +244,6 @@ func writeJSONTo(w http.ResponseWriter, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-func (b *Bus) listAccounts(w http.ResponseWriter, r *http.Request) {
-	email := r.URL.Query().Get("email")
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	users := []map[string]any{}
-	for _, account := range b.accounts {
-		if email == "" || account["email"] == email {
-			users = append(users, publicAccount(account))
-		}
-	}
-	writeJSONTo(w, map[string]any{"users": users})
-}
-
-func (b *Bus) writeAccount(w http.ResponseWriter, id string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	account, ok := b.accounts[id]
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	writeJSONTo(w, publicAccount(account))
-}
-
-func (b *Bus) writeAccountField(w http.ResponseWriter, id, field string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	account, ok := b.accounts[id]
-	if !ok || account[field] == "" {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	writeJSONTo(w, map[string]any{"user_id": id, field: account[field]})
-}
-
-func (b *Bus) patchAccount(w http.ResponseWriter, r *http.Request, id string) {
-	var body map[string]any
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	account, ok := b.accounts[id]
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	for key, value := range body {
-		account[key] = value
-	}
-	writeJSONTo(w, map[string]any{"status": "updated"})
-}
-
-func (b *Bus) putPassword(w http.ResponseWriter, r *http.Request, id string) {
-	var body map[string]any
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	account, ok := b.accounts[id]
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	account["password_hash"] = body["password_hash"]
-	// Only a request that names the flag changes it — the bus's own rule.
-	if value, ok := body["must_change_password"]; ok {
-		account["must_change_password"] = value
-	}
-	writeJSONTo(w, map[string]any{"status": "updated"})
-}
-
-func (b *Bus) createAccount(w http.ResponseWriter, r *http.Request) {
-	var body map[string]any
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	id, _ := body["id"].(string)
-	email, _ := body["email"].(string)
-
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if email != "" {
-		for _, account := range b.accounts {
-			if account["email"] == email {
-				w.WriteHeader(http.StatusConflict)
-				return
-			}
-		}
-	}
-	role := b.newAccountRole
-	if role == "" {
-		role = "user"
-	}
-	account := map[string]any{
-		"user_id": id, "email": email, "role": role, "tier": "free",
-		"status": "active", "must_change_password": false,
-	}
-	if name, ok := body["display_name"]; ok {
-		account["display_name"] = name
-	}
-	if hash, ok := body["password_hash"]; ok {
-		account["password_hash"] = hash
-	}
-	b.accounts[id] = account
-	writeJSONTo(w, map[string]any{"id": id, "status": "created"})
-}
-
-func (b *Bus) listLinks(w http.ResponseWriter, userID string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	links := []map[string]any{}
-	for pair, providerID := range b.links[userID] {
-		provider := strings.SplitN(pair, "|", 2)[0]
-		links = append(links, map[string]any{"user_id": userID, "provider": provider, "provider_id": providerID})
-	}
-	writeJSONTo(w, map[string]any{"links": links})
-}
-
-func (b *Bus) link(w http.ResponseWriter, r *http.Request, userID string) {
-	var body map[string]string
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.links[userID] == nil {
-		b.links[userID] = map[string]string{}
-	}
-	b.links[userID][body["provider"]+"|"+body["provider_id"]] = body["provider_id"]
-	writeJSONTo(w, map[string]any{"status": "linked"})
-}
-
-func (b *Bus) lookupLink(w http.ResponseWriter, r *http.Request) {
-	provider := r.URL.Query().Get("provider")
-	providerID := r.URL.Query().Get("provider_id")
-	ids := []string{}
-	b.mu.Lock()
-	for userID, links := range b.links {
-		if _, ok := links[provider+"|"+providerID]; ok {
-			ids = append(ids, userID)
-		}
-	}
-	b.mu.Unlock()
-	writeJSONTo(w, map[string]any{"user_ids": ids})
-}
-
 func (b *Bus) recordAudit(w http.ResponseWriter, r *http.Request) {
 	var body map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&body)
@@ -404,35 +251,6 @@ func (b *Bus) recordAudit(w http.ResponseWriter, r *http.Request) {
 	b.audit = append(b.audit, body)
 	b.mu.Unlock()
 	writeJSONTo(w, map[string]any{"status": "recorded"})
-}
-
-func (b *Bus) storeToken(w http.ResponseWriter, r *http.Request) {
-	var body map[string]string
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	b.mu.Lock()
-	b.tokens[body["token_hash"]] = map[string]string{
-		"user_id": body["user_id"], "expires_at": body["expires_at"],
-	}
-	b.mu.Unlock()
-	writeJSONTo(w, map[string]any{"status": "saved"})
-}
-
-func (b *Bus) readToken(w http.ResponseWriter, hash string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	token, ok := b.tokens[hash]
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	writeJSONTo(w, map[string]any{"user_id": token["user_id"], "expires_at": token["expires_at"]})
-}
-
-func (b *Bus) deleteToken(w http.ResponseWriter, hash string) {
-	b.mu.Lock()
-	delete(b.tokens, hash)
-	b.mu.Unlock()
-	writeJSONTo(w, map[string]any{"status": "revoked"})
 }
 
 func (b *Bus) readConfig(w http.ResponseWriter, component string) {
@@ -460,16 +278,4 @@ func (b *Bus) writeConfig(w http.ResponseWriter, r *http.Request, rest string) {
 	b.config[parts[0]][parts[1]] = body["value"]
 	b.mu.Unlock()
 	writeJSONTo(w, map[string]any{"status": "set"})
-}
-
-// publicAccount drops the credential: the bus's account shape never carries it.
-func publicAccount(account map[string]any) map[string]any {
-	out := map[string]any{}
-	for key, value := range account {
-		if key == "password_hash" {
-			continue
-		}
-		out[key] = value
-	}
-	return out
 }

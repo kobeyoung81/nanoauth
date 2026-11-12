@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"gitee.com/kobeyoung81/nanoauth/internal/accounttest"
 	"gitee.com/kobeyoung81/nanoauth/internal/bustest"
 	"gitee.com/kobeyoung81/nanoauth/internal/directory"
+	"gitee.com/kobeyoung81/nanoauth/internal/fakestore"
 	"gitee.com/kobeyoung81/nanoauth/internal/middleware"
 	"gitee.com/kobeyoung81/nanoauth/internal/store"
 	"gitee.com/kobeyoung81/nanoauth/internal/token"
@@ -79,7 +79,7 @@ func newDirectoryHandler(t *testing.T, console directory.Console, cfg *directory
 	t.Helper()
 	stub := bustest.New()
 	handler := NewDirectoryHandler(console, &fakeConfigSource{cfg: cfg},
-		store.NewUserStore(accounttest.New(stub)).WithAdmin(stub.Client(t)))
+		store.NewUserStore(fakestore.NewAccounts(stub)).WithAdmin(stub.Client(t)))
 	return handler, stub
 }
 

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"gitee.com/kobeyoung81/nanoauth/internal/accounttest"
 	"gitee.com/kobeyoung81/nanoauth/internal/bustest"
+	"gitee.com/kobeyoung81/nanoauth/internal/fakestore"
 	"gitee.com/kobeyoung81/nanoauth/internal/store"
 	"gitee.com/kobeyoung81/nanoauth/internal/token"
 	"golang.org/x/crypto/bcrypt"
@@ -43,8 +43,8 @@ func setupHandler(t *testing.T) (*AuthHandler, *token.TokenService, *bustest.Bus
 	// start from an installation that already has its administrator — the
 	// bootstrap rule itself is pinned against the real store.
 	stub.SetConfig("auth", map[string]string{"firstUserIsAdmin": "false"})
-	users := store.NewUserStore(accounttest.New(stub)).WithAdmin(stub.Client(t))
-	h := NewAuthHandler(svc, users, store.NewTokenStore(stub.Client(t)))
+	users := store.NewUserStore(fakestore.NewAccounts(stub)).WithAdmin(stub.Client(t))
+	h := NewAuthHandler(svc, users, store.NewTokenStore(fakestore.NewTickets(stub)))
 	return h, svc, stub
 }
 

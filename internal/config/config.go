@@ -2,9 +2,9 @@ package config
 
 type AuthConfig struct {
 	ServerAddr string `mapstructure:"server_addr"`
-	// The bus still answers the account surface this service has not taken over;
-	// these two are its address and the platform's shared token.
-	BusURL   string `mapstructure:"bus_url"`
+	// BusToken is the platform's shared internal token: the admin module, which
+	// this service asks for its configuration and reports its audit trail to,
+	// answers only requests that carry it.
 	BusToken string `mapstructure:"bus_token"`
 	// AdminURL is the admin module, which owns the configuration this service
 	// reads and writes (the JWT keypair, the directory settings).
@@ -30,7 +30,6 @@ type JWTConfig struct {
 func DefaultConfig() AuthConfig {
 	return AuthConfig{
 		ServerAddr:      ":8081",
-		BusURL:          "http://127.0.0.1:9000",
 		AdminURL:        "http://nanoadmin:8080",
 		RefreshTokenTTL: 604800, // refresh token lifetime in seconds (7d)
 		JWT: JWTConfig{

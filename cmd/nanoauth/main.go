@@ -69,14 +69,9 @@ func main() {
 	if addr := os.Getenv("NANOAUTH_ADDR"); addr != "" {
 		cfg.ServerAddr = addr
 	}
-	// The identity collections are this service's own database now. The two URLs
-	// below are where the rest of the deployment lives: the bus (messages, and the
-	// forwarders older clients still call) and the admin module (configuration —
-	// the JWT keypair, the directory settings, the first-account switch — and the
-	// audit trail).
-	if busURL := os.Getenv("NANOAUTH_BUS_URL"); busURL != "" {
-		cfg.BusURL = busURL
-	}
+	// The identity collections are this service's own database. The one module it
+	// still talks to is the admin module: configuration (the JWT keypair, the
+	// directory settings, the first-account switch) and the audit trail.
 	if adminURL := os.Getenv("NANOSEC_ADMIN_URL"); adminURL != "" {
 		cfg.AdminURL = adminURL
 	}

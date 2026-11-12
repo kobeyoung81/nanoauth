@@ -75,11 +75,11 @@ func TestPurgeExpiredRefreshTokens_KeepsLiveOnes(t *testing.T) {
 }
 
 // TestTokenStoreRotatesAgainstTheDatabase: the rotation is the auth service's own
-// step, and the tickets are its collection — so it must not need the bus. The
-// store is built with no bus at all, which makes any fallback a panic.
+// step, and the tickets are its collection — so it happens against the database,
+// with no second owner in between.
 func TestTokenStoreRotatesAgainstTheDatabase(t *testing.T) {
 	s := testStore(t)
-	tokens := NewTokenStore(nil).WithAccounts(s)
+	tokens := NewTokenStore(s)
 	ctx := t.Context()
 
 	first, err := tokens.StoreRefreshToken(ctx, "u-1", time.Hour)
