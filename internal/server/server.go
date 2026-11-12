@@ -90,7 +90,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return err
 	}
 
-	userStore := store.NewUserStore(s.bus).WithAccounts(s.accounts)
+	userStore := store.NewUserStore(s.accounts).WithAdmin(admin)
 	tokenStore := store.NewTokenStore(s.bus).WithAccounts(s.accounts)
 	tokenStore.SetTTL(time.Duration(s.cfg.RefreshTokenTTL) * time.Second)
 

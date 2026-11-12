@@ -22,15 +22,16 @@ import (
 )
 
 type Bus struct {
-	mu              sync.Mutex
-	accounts        map[string]map[string]any
-	links           map[string]map[string]string // userID → provider|providerID → providerID
-	tokens          map[string]map[string]string // hash → {user_id, expires_at}
-	config          map[string]map[string]string // component → key → value
-	audit           []map[string]any
-	failRead        bool
-	failAccountRead bool
-	requests        []string
+	mu               sync.Mutex
+	accounts         map[string]map[string]any
+	links            map[string]map[string]string // userID → provider|providerID → providerID
+	tokens           map[string]map[string]string // hash → {user_id, expires_at}
+	config           map[string]map[string]string // component → key → value
+	audit            []map[string]any
+	failRead         bool
+	failAccountRead  bool
+	requests         []string
+	bootstrapClaimed bool
 	// newAccountRole is the role the fake gives an account created through its
 	// POST /users. The real bus decides this (the first sign-up becomes an
 	// administrator); a test that cares sets it explicitly.
@@ -138,6 +139,14 @@ func (b *Bus) FailAccountReads(fail bool) {
 	b.failAccountRead = fail
 }
 
+// AccountReadsFailing reports that switch, for a store adapter that has to fail
+// the same reads the fake's HTTP surface fails.
+func (b *Bus) AccountReadsFailing() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.failAccountRead
+}
+
 // Requests returns the calls the fake has served, in order.
 func (b *Bus) Requests() []string {
 	b.mu.Lock()
@@ -156,11 +165,25 @@ func (b *Bus) Client(t *testing.T) *bus.Client {
 func (b *Bus) AddAccount(id, email, displayName, passwordHash string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	role := b.newAccountRole
+	if role == "" {
+		role = "user"
+	}
 	b.accounts[id] = map[string]any{
 		"user_id": id, "email": email, "display_name": displayName,
-		"password_hash": passwordHash, "role": "user", "tier": "free",
+		"password_hash": passwordHash, "role": role, "tier": "free",
 		"status": "active", "must_change_password": false,
 	}
+}
+
+// AddLink attaches one provider identity, keeping the others.
+func (b *Bus) AddLink(userID, provider, providerID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.links[userID] == nil {
+		b.links[userID] = map[string]string{}
+	}
+	b.links[userID][provider+"|"+providerID] = providerID
 }
 
 func (b *Bus) Account(id string) map[string]any {
@@ -210,7 +233,9 @@ func (b *Bus) handle(w http.ResponseWriter, r *http.Request) {
 		b.listLinks(w, strings.TrimSuffix(strings.TrimPrefix(path, "/users/"), "/oauth-links"))
 	case r.Method == http.MethodPost && strings.HasPrefix(path, "/users/") && strings.HasSuffix(path, "/oauth-links"):
 		b.link(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "/users/"), "/oauth-links"))
-	case r.Method == http.MethodPost && path == "/audit":
+	// The admin module owns the trail; the bus only forwards there. One fake
+	// serves both shapes so a test can point either client at it.
+	case r.Method == http.MethodPost && (path == "/audit" || path == "/internal/audit"):
 		b.recordAudit(w, r)
 	case r.Method == http.MethodPost && path == "/auth/refresh-tokens":
 		b.storeToken(w, r)

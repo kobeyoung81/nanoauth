@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"gitee.com/kobeyoung81/nanoauth/internal/accounttest"
 	"gitee.com/kobeyoung81/nanoauth/internal/bustest"
 	"gitee.com/kobeyoung81/nanoauth/internal/handler"
 	"gitee.com/kobeyoung81/nanoauth/internal/store"
@@ -30,7 +31,7 @@ func setupAuthServer(t *testing.T) (*httptest.Server, *token.TokenService, *bust
 
 	stub := bustest.New()
 	client := stub.Client(t)
-	us := store.NewUserStore(client)
+	us := store.NewUserStore(accounttest.New(stub))
 	ts := store.NewTokenStore(client)
 
 	h := handler.NewAuthHandler(svc, us, ts)

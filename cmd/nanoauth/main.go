@@ -69,10 +69,11 @@ func main() {
 	if addr := os.Getenv("NANOAUTH_ADDR"); addr != "" {
 		cfg.ServerAddr = addr
 	}
-	// The bus owns accounts, tickets and links; the admin module owns
-	// configuration (the JWT keypair, the directory settings). Both are asked
-	// over HTTP with the same internal token, replacing the DSN that used to be
-	// here.
+	// The identity collections are this service's own database now. The two URLs
+	// below are where the rest of the deployment lives: the bus (messages, and the
+	// forwarders older clients still call) and the admin module (configuration —
+	// the JWT keypair, the directory settings, the first-account switch — and the
+	// audit trail).
 	if busURL := os.Getenv("NANOAUTH_BUS_URL"); busURL != "" {
 		cfg.BusURL = busURL
 	}

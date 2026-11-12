@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitee.com/kobeyoung81/nanoauth/internal/accounttest"
 	"gitee.com/kobeyoung81/nanoauth/internal/bustest"
 	"gitee.com/kobeyoung81/nanoauth/internal/directory"
 	"gitee.com/kobeyoung81/nanoauth/internal/middleware"
@@ -66,7 +67,8 @@ func assertReadOnly(t *testing.T, stub *bustest.Bus) {
 		if strings.HasPrefix(call, "GET ") {
 			continue
 		}
-		if call == "POST /api/v1/audit" {
+		// The trail is a report, not a change; the admin module owns it now.
+		if call == "POST /api/v1/audit" || call == "POST /api/v1/internal/audit" {
 			continue
 		}
 		t.Errorf("the console must not write: %s", call)
@@ -76,7 +78,8 @@ func assertReadOnly(t *testing.T, stub *bustest.Bus) {
 func newDirectoryHandler(t *testing.T, console directory.Console, cfg *directory.Config) (*DirectoryHandler, *bustest.Bus) {
 	t.Helper()
 	stub := bustest.New()
-	handler := NewDirectoryHandler(console, &fakeConfigSource{cfg: cfg}, store.NewUserStore(stub.Client(t)))
+	handler := NewDirectoryHandler(console, &fakeConfigSource{cfg: cfg},
+		store.NewUserStore(accounttest.New(stub)).WithAdmin(stub.Client(t)))
 	return handler, stub
 }
 

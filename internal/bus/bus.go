@@ -1,9 +1,11 @@
-// Package bus is nanoauth's client for the platform bus.
+// Package bus is nanoauth's client for the platform's internal HTTP surfaces.
 //
-// The bus owns every collection now — accounts, the audit log, the shared
-// configuration, the directory links and the refresh tickets — so this service
-// has no database connection at all: it asks. The transport carries the internal
-// token, the same one every other component presents.
+// The bus is the messaging service; the collections this service owns — accounts,
+// channel and OAuth links, refresh tickets, git shortcuts, per-user secrets — are
+// read and written through its own database connection, not here. What is left on
+// this client is the deployment's other internal service, the admin module
+// (configuration, the audit trail). The transport carries the internal token, the
+// same one every other component presents.
 package bus
 
 import (

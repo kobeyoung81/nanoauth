@@ -112,9 +112,8 @@ func TestAccountByOAuthLink(t *testing.T) {
 	}
 }
 
-// TestUserStoreReadsFromTheDatabaseWhenItHasOne: the sign-in path must not need
-// the bus for its reads. The store is built with no bus at all, so any fallback
-// would panic and the test would fail rather than lie.
+// TestUserStoreReadsFromTheDatabase: the sign-in path reads the identity
+// database and nothing else — the bus is not wired into this store at all.
 func TestUserStoreReadsFromTheDatabaseWhenItHasOne(t *testing.T) {
 	s := testStore(t)
 	seedUserDoc(t, s, bson.D{
@@ -127,7 +126,7 @@ func TestUserStoreReadsFromTheDatabaseWhenItHasOne(t *testing.T) {
 		t.Fatalf("seed link: %v", err)
 	}
 
-	users := NewUserStore(nil).WithAccounts(s)
+	users := NewUserStore(s)
 	ctx := t.Context()
 
 	record, err := users.GetByEmail(ctx, "ada@example.test")

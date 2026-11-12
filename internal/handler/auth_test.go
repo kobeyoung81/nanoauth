@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"gitee.com/kobeyoung81/nanoauth/internal/accounttest"
 	"gitee.com/kobeyoung81/nanoauth/internal/bustest"
 	"gitee.com/kobeyoung81/nanoauth/internal/store"
 	"gitee.com/kobeyoung81/nanoauth/internal/token"
@@ -36,8 +37,14 @@ func setupHandler(t *testing.T) (*AuthHandler, *token.TokenService, *bustest.Bus
 	}
 
 	stub := bustest.New()
-	client := stub.Client(t)
-	h := NewAuthHandler(svc, store.NewUserStore(client), store.NewTokenStore(client))
+	// The accounts are the identity database's: the fake bus keeps their state,
+	// and this adapter speaks the store's calls to it. The admin module is behind
+	// it for the audit trail, and the installation switch is off so these flows
+	// start from an installation that already has its administrator — the
+	// bootstrap rule itself is pinned against the real store.
+	stub.SetConfig("auth", map[string]string{"firstUserIsAdmin": "false"})
+	users := store.NewUserStore(accounttest.New(stub)).WithAdmin(stub.Client(t))
+	h := NewAuthHandler(svc, users, store.NewTokenStore(stub.Client(t)))
 	return h, svc, stub
 }
 
@@ -384,9 +391,9 @@ func hashTokenHelper(token string) string {
 }
 
 // A fresh installation hands the administrator role to its first sign-up. The
-// bus owns that decision; what the handler must not do is answer with a
-// hard-coded "user", which would hide the role until the next token refresh.
-func TestHandleRegister_UsesTheRoleTheBusAssigned(t *testing.T) {
+// identity store owns that decision; what the handler must not do is answer with
+// a hard-coded "user", which would hide the role until the next token refresh.
+func TestHandleRegister_UsesTheAssignedRole(t *testing.T) {
 	h, svc, stub := setupHandler(t)
 	stub.SetNewAccountRole("admin")
 
