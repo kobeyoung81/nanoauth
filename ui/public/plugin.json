@@ -1,0 +1,14 @@
+{
+  "contract": 1,
+  "plugin": "auth",
+  "entry": "/plugins/auth/remoteEntry.js",
+  "panels": [],
+  "pages": [
+    {
+      "id": "users",
+      "path": "/admin/users",
+      "title": { "zh-CN": "用户", "en": "Users" },
+      "mount": { "kind": "module", "module": "auth/pages", "export": "UsersPage" }
+    }
+  ]
+}

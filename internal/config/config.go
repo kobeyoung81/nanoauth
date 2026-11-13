@@ -8,7 +8,11 @@ type AuthConfig struct {
 	BusToken string `mapstructure:"bus_token"`
 	// AdminURL is the admin module, which owns the configuration this service
 	// reads and writes (the JWT keypair, the directory settings).
-	AdminURL        string `mapstructure:"admin_url"`
+	AdminURL string `mapstructure:"admin_url"`
+	// UIDir is the built front end this module contributes to the portal
+	// (served at /plugins/auth/). Empty disables it: the module still works, the
+	// portal then shows its own user page.
+	UIDir           string `mapstructure:"ui_dir"`
 	RefreshTokenTTL int    `mapstructure:"refresh_token_ttl"` // seconds, default 604800 (7d)
 	JWT             JWTConfig
 	WeChat          WeChatConfig `mapstructure:"wechat"`
@@ -31,6 +35,7 @@ func DefaultConfig() AuthConfig {
 	return AuthConfig{
 		ServerAddr:      ":8081",
 		AdminURL:        "http://nanoadmin:8080",
+		UIDir:           "/app/ui",
 		RefreshTokenTTL: 604800, // refresh token lifetime in seconds (7d)
 		JWT: JWTConfig{
 			KeyID:    "2026-08",

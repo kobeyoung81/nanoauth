@@ -75,6 +75,9 @@ func main() {
 	if adminURL := os.Getenv("NANOSEC_ADMIN_URL"); adminURL != "" {
 		cfg.AdminURL = adminURL
 	}
+	if dir := os.Getenv("NANOAUTH_UI_DIR"); dir != "" {
+		cfg.UIDir = dir
+	}
 	if token := os.Getenv("NANOSEC_BUS_INTERNAL_TOKEN"); token != "" {
 		cfg.BusToken = token
 	}

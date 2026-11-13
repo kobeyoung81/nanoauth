@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"gitee.com/kobeyoung81/nanoauth/internal/bus"
@@ -167,6 +168,18 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.Handle("POST /auth/v1/directory/analyze", directoryAdmin(directoryHandler.HandleAnalyze))
 	mux.Handle("POST /auth/v1/directory/search", directoryAdmin(directoryHandler.HandleSearch))
 	mux.Handle("POST /auth/v1/directory/check", directoryAdmin(directoryHandler.HandleCheck))
+
+	// This module's front end, if the image carries one. It is static and public
+	// (it is the console's page, not an API): the portal's shell loads it from
+	// /plugins/auth/ and the page's data calls carry the user's own token.
+	if s.cfg.UIDir != "" {
+		if info, err := os.Stat(s.cfg.UIDir); err == nil && info.IsDir() {
+			mux.Handle("GET /plugins/auth/", http.StripPrefix("/plugins/auth/", http.FileServer(http.Dir(s.cfg.UIDir))))
+			slog.Info("serving the auth front end", "dir", s.cfg.UIDir)
+		} else {
+			slog.Info("no auth front end in this image", "dir", s.cfg.UIDir)
+		}
+	}
 
 	s.httpSrv = &http.Server{
 		Addr:    s.cfg.ServerAddr,
