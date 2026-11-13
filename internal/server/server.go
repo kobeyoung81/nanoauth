@@ -113,6 +113,11 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	mux := http.NewServeMux()
+	// Liveness/readiness for the orchestrator: no credential, no state.
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
 	mux.HandleFunc("POST /auth/v1/register", authHandler.HandleRegister)
 	mux.HandleFunc("POST /auth/v1/token", authHandler.HandleToken)
 	mux.HandleFunc("POST /auth/v1/token/refresh", authHandler.HandleRefresh)
