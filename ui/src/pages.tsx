@@ -5,3 +5,4 @@
 
 export { UsersPage } from './users'
 export { AccountPage } from './account'
+export { UserDetailPage } from './userDetail'

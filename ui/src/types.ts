@@ -23,7 +23,7 @@ export type AccountContainer = {
   updated_at: string
 }
 
-export type AccountDetail = {
+export type MyAccountDetail = {
   user_id: string
   display_name: string
   tier: string
@@ -38,4 +38,24 @@ export type AccountAgent = {
   model: string
   status: string
   tools: string[]
+}
+
+// The account detail: `/users/{id}` plus its containers.
+export type AccountDetail = {
+  user_id: string
+  display_name: string
+  role: string
+  tier: string
+  status: string
+  agent_status: string
+  auth_source?: string
+  channels: string[]
+  last_activity_at: string
+  override_scopes?: string[]
+  containers: AccountContainer[]
+}
+
+export type AdminIdentity = {
+  user_id: string
+  role: string
 }

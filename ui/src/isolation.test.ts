@@ -4,6 +4,7 @@ import remoteConfig from '../vite.config.ts?raw'
 import account from './account.tsx?raw'
 import contract from './contract.ts?raw'
 import pages from './pages.tsx?raw'
+import userDetail from './userDetail.tsx?raw'
 import users from './users.tsx?raw'
 
 // This application renders inside the portal's tree and may not import the
@@ -12,7 +13,7 @@ import users from './users.tsx?raw'
 // import that sneaks back in would build here and fail at runtime (the module does
 // not exist in the shell's bundle).
 
-const SOURCES = { 'users.tsx': users, 'account.tsx': account }
+const SOURCES = { 'users.tsx': users, 'account.tsx': account, 'userDetail.tsx': userDetail }
 
 describe('the boundary', () => {
   for (const [name, source] of Object.entries(SOURCES)) {
@@ -38,7 +39,7 @@ describe('the boundary', () => {
     for (const page of manifest.pages) {
       expect(pages, `${page.id} is not exported`).toContain(`export { ${page.mount.export} }`)
     }
-    expect(manifest.pages.map((page) => page.path)).toEqual(['/admin/users', '/me'])
+    expect(manifest.pages.map((page) => page.path)).toEqual(['/admin/users', '/me', '/admin/users/:id'])
   })
 
   it('ships both pages from the remote build under /plugins/auth/', () => {

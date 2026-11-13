@@ -29,6 +29,19 @@
         "module": "auth/pages",
         "export": "AccountPage"
       }
+    },
+    {
+      "id": "user-detail",
+      "path": "/admin/users/:id",
+      "title": {
+        "zh-CN": "用户详情",
+        "en": "User detail"
+      },
+      "mount": {
+        "kind": "module",
+        "module": "auth/pages",
+        "export": "UserDetailPage"
+      }
     }
   ]
 }

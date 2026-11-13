@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { Bot, Container, FolderTree, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
 import type { PageContext } from './contract'
-import type { AccountAgent, AccountDetail } from './types'
+import type { AccountAgent, MyAccountDetail } from './types'
 import { useApi } from './useApi'
 
 export function AccountPage({ ctx }: { ctx: PageContext }) {
@@ -39,7 +39,7 @@ export function AccountPage({ ctx }: { ctx: PageContext }) {
   } = ui
 
   const userBase = api.bases.user
-  const detailState = useApi<AccountDetail>(api, '/me/detail', userBase)
+  const detailState = useApi<MyAccountDetail>(api, '/me/detail', userBase)
   const [showDeleted, setShowDeleted] = useState(false)
   const agentsState = useApi<AccountAgent[]>(
     api,
