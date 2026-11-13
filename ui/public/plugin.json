@@ -7,8 +7,28 @@
     {
       "id": "users",
       "path": "/admin/users",
-      "title": { "zh-CN": "用户", "en": "Users" },
-      "mount": { "kind": "module", "module": "auth/pages", "export": "UsersPage" }
+      "title": {
+        "zh-CN": "用户",
+        "en": "Users"
+      },
+      "mount": {
+        "kind": "module",
+        "module": "auth/pages",
+        "export": "UsersPage"
+      }
+    },
+    {
+      "id": "account",
+      "path": "/me",
+      "title": {
+        "zh-CN": "我的账户",
+        "en": "My account"
+      },
+      "mount": {
+        "kind": "module",
+        "module": "auth/pages",
+        "export": "AccountPage"
+      }
     }
   ]
 }

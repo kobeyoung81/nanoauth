@@ -1,38 +1,54 @@
 import { describe, expect, it } from 'vitest'
 import manifest from '../public/plugin.json'
 import remoteConfig from '../vite.config.ts?raw'
+import account from './account.tsx?raw'
 import contract from './contract.ts?raw'
 import pages from './pages.tsx?raw'
+import users from './users.tsx?raw'
 
 // This application renders inside the portal's tree and may not import the
-// portal's source: the kit, the strings and the data client all arrive through the
-// page context. These checks pin that boundary, because an import that sneaks back
-// in would build here and fail at runtime (the module does not exist in the shell's
-// bundle).
+// portal's source: the kit, the strings, the data client and the shell features
+// all arrive through the page context. These checks pin that boundary, because an
+// import that sneaks back in would build here and fail at runtime (the module does
+// not exist in the shell's bundle).
+
+const SOURCES = { 'users.tsx': users, 'account.tsx': account }
 
 describe('the boundary', () => {
-  it('imports only its own modules, react and icons', () => {
-    const imports = [...pages.matchAll(/from '([^']+)'/g)].map((match) => match[1])
-    const external = imports.filter((spec) => !spec.startsWith('.'))
-    expect(external.sort()).toEqual(['lucide-react', 'react'])
+  for (const [name, source] of Object.entries(SOURCES)) {
+    it(`${name} imports only its own modules, react and icons`, () => {
+      const imports = [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1])
+      const external = imports.filter((spec) => !spec.startsWith('.'))
+      const allowed = ['lucide-react', 'react']
+      expect(external.filter((spec) => !allowed.includes(spec))).toEqual([])
+    })
+
+    it(`${name} takes everything from the context`, () => {
+      expect(source).not.toContain("from '../components")
+      expect(source).not.toContain("from '../lib")
+    })
+  }
+
+  it('asks the shell for the agent editor instead of rebuilding it', () => {
+    expect(account).toContain('features.openAgentForm(')
+    expect(account).not.toContain('AgentFormDialog')
   })
 
-  it('takes the kit, the strings and the client from the context', () => {
-    expect(pages).toContain('const { t, ui, api, navigate } = ctx')
-    expect(pages).not.toContain("from '../components")
-    expect(pages).not.toContain("from '../lib")
+  it('exposes every page the manifest declares', () => {
+    for (const page of manifest.pages) {
+      expect(pages, `${page.id} is not exported`).toContain(`export { ${page.mount.export} }`)
+    }
+    expect(manifest.pages.map((page) => page.path)).toEqual(['/admin/users', '/me'])
   })
 
-  it('declares the page in the manifest and exposes it from the remote build', () => {
-    expect(manifest.pages.map((page) => page.path)).toEqual(['/admin/users'])
+  it('ships both pages from the remote build under /plugins/auth/', () => {
     expect(manifest.entry).toBe('/plugins/auth/remoteEntry.js')
     expect(remoteConfig).toContain("'./pages': './src/pages.tsx'")
     expect(remoteConfig).toContain("base: '/plugins/auth/'")
   })
 
-  it('mirrors the portal contract fields the page uses', () => {
-    // A field added on the portal side must be added here before a page may use it.
-    for (const field of ['t:', 'ui:', 'api:', 'navigate:', 'token:', 'locale:']) {
+  it('mirrors the portal contract fields the pages use', () => {
+    for (const field of ['t:', 'ui:', 'api:', 'features:', 'toast:', 'navigate:', 'token:', 'locale:']) {
       expect(contract).toContain(field)
     }
   })

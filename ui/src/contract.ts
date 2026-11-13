@@ -12,7 +12,7 @@ export type PortalUI = {
   Button: ComponentType<
     Children & {
       variant?: 'default' | 'outline' | 'ghost' | 'secondary' | 'destructive'
-      size?: 'default' | 'sm' | 'lg'
+      size?: 'default' | 'sm' | 'lg' | 'icon'
       type?: 'button' | 'submit'
       className?: string
       disabled?: boolean
@@ -41,7 +41,13 @@ export type PortalUI = {
     }
   >
   Skeleton: ComponentType<{ className?: string }>
-  EmptyState: ComponentType<{ title: string; description?: string; action?: ReactNode; className?: string }>
+  EmptyState: ComponentType<{
+    title: string
+    description?: string
+    icon?: ComponentType<{ className?: string }>
+    action?: ReactNode
+    className?: string
+  }>
   Table: ComponentType<Children & { className?: string; stacked?: boolean }>
   TableHeader: ComponentType<Children & { className?: string }>
   TableBody: ComponentType<Children & { className?: string }>
@@ -67,6 +73,26 @@ export type PortalUI = {
     className?: string
   }>
   FormField: ComponentType<Children & { label: string; hint?: string; error?: string; className?: string }>
+  MetricCard: ComponentType<{
+    icon: ComponentType<{ className?: string }>
+    label: string
+    value?: ReactNode
+    sub?: ReactNode
+    loading?: boolean
+    className?: string
+  }>
+  Tooltip: ComponentType<Children & { delayDuration?: number }>
+  TooltipTrigger: ComponentType<Children & { asChild?: boolean }>
+  TooltipContent: ComponentType<Children & { className?: string; sideOffset?: number }>
+  ConfirmDialog: ComponentType<{
+    open: boolean
+    onOpenChange: (open: boolean) => void
+    title: string
+    description?: string
+    confirmLabel?: string
+    onConfirm: () => Promise<void> | void
+    busy?: boolean
+  }>
   Select: ComponentType<{
     value: string
     onValueChange: (value: string) => void
@@ -94,6 +120,13 @@ export type PageContext = {
     patch: <T>(path: string, body: unknown, base?: string) => Promise<T>
     del: <T>(path: string, base?: string) => Promise<T>
     bases: { portalConsole: string; admin: string; user: string }
+  }
+  features: {
+    openAgentForm: (request: { userId: string; agentId?: string; onSaved?: () => void }) => void
+  }
+  toast: {
+    success: (message: string) => void
+    error: (message: string) => void
   }
 }
 
