@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"gitee.com/kobeyoung81/nanoauth/internal/bus"
@@ -174,7 +175,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// /plugins/auth/ and the page's data calls carry the user's own token.
 	if s.cfg.UIDir != "" {
 		if info, err := os.Stat(s.cfg.UIDir); err == nil && info.IsDir() {
-			mux.Handle("GET /plugins/auth/", http.StripPrefix("/plugins/auth/", http.FileServer(http.Dir(s.cfg.UIDir))))
+			mux.Handle("GET /plugins/auth/", pluginFiles(s.cfg.UIDir))
 			slog.Info("serving the auth front end", "dir", s.cfg.UIDir)
 		} else {
 			slog.Info("no auth front end in this image", "dir", s.cfg.UIDir)
@@ -197,6 +198,28 @@ func (s *Server) Start(ctx context.Context) error {
 	}()
 
 	return s.httpSrv.ListenAndServe()
+}
+
+// pluginFiles serves this module's front end.
+//
+// Two rules the plain file server gets wrong for a plugin bundle: there is no
+// index to serve (a directory request must not list the folder), and only the
+// fingerprinted assets may be cached — the entry point and the manifest keep their
+// names across releases, so a cached copy would pin an old build.
+func pluginFiles(dir string) http.Handler {
+	files := http.StripPrefix("/plugins/auth/", http.FileServer(http.Dir(dir)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		files.ServeHTTP(w, r)
+	})
 }
 
 func withCORS(next http.Handler) http.Handler {
