@@ -21,10 +21,40 @@ import {
   Trash2,
   UserCog,
 } from 'lucide-react'
-import type { PageContext } from './contract'
+import type { PageContext, PortalUIText } from './contract'
 import type { AccountAgent, AdminIdentity, AccountDetail } from './types'
 import { canDispose, canReprovision, canRestart } from './containerState'
 import { useApi } from './useApi'
+
+// The section wrapper. It is defined once, at module scope: a component created
+// during render is a new type every time, so React unmounts and remounts its whole
+// subtree — the widgets inside it included — and their mount effects keep the page
+// re-rendering.
+function SectionCard({
+  ui,
+  title,
+  actions,
+  children,
+}: {
+  ui: PortalUIText
+  title: string
+  actions?: ReactNode
+  children: ReactNode
+}) {
+  const { Card, CardHeader, CardTitle, CardContent } = ui
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <UserCog className="h-4 w-4 text-muted-foreground" />
+          {title}
+        </CardTitle>
+        {actions}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  )
+}
 
 const ALL_ROLES = ['admin', 'operator', 'support', 'auditor', 'user']
 const MANAGEABLE_ROLES = ['operator', 'support', 'auditor', 'user']
@@ -37,9 +67,7 @@ export function UserDetailPage({ ctx }: { ctx: PageContext }) {
   const {
     PageHeader,
     Card,
-    CardHeader,
     CardContent,
-    CardTitle,
     Badge,
     Button,
     ConfirmDialog,
@@ -106,20 +134,6 @@ export function UserDetailPage({ ctx }: { ctx: PageContext }) {
 
   // The agent editor is the shell's (it owns the agent rows): the page asks for it
   // and the shell loads the agent and owns the dialog.
-  // The section wrapper uses the kit, which lives in this component's scope.
-  const SectionCard = ({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) => (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <UserCog className="h-4 w-4 text-muted-foreground" />
-          {title}
-        </CardTitle>
-        {actions}
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  )
-
   const openAgentForm = (agentId?: string) =>
     features.openAgentForm({ userId: id, agentId, onSaved: () => agentsState.refetch() })
   const agents = agentsState.data
@@ -336,7 +350,7 @@ export function UserDetailPage({ ctx }: { ctx: PageContext }) {
       ) : null}
 
       {/* Profile */}
-      <SectionCard title={t('userDetail.profile')}>
+      <SectionCard ui={ui} title={t('userDetail.profile')}>
         {userState.loading ? (
           <Skeleton className="h-6 w-full" />
         ) : user ? (
@@ -351,7 +365,7 @@ export function UserDetailPage({ ctx }: { ctx: PageContext }) {
       </SectionCard>
 
       {/* Account management */}
-      <SectionCard title={t('userDetail.accountActions')}>
+      <SectionCard ui={ui} title={t('userDetail.accountActions')}>
         {user && canManageTarget ? (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">{t('userDetail.role')}</span>
@@ -466,6 +480,7 @@ export function UserDetailPage({ ctx }: { ctx: PageContext }) {
 
       {/* Containers */}
       <SectionCard
+        ui={ui}
         title={t('userDetail.containers')}
         actions={
           <Button
@@ -551,6 +566,7 @@ export function UserDetailPage({ ctx }: { ctx: PageContext }) {
 
       {/* Agents */}
       <SectionCard
+        ui={ui}
         title={t('agent.agents')}
         actions={
           <div className="flex items-center gap-2">
@@ -672,6 +688,7 @@ export function UserDetailPage({ ctx }: { ctx: PageContext }) {
 
       {/* Storage management */}
       <SectionCard
+        ui={ui}
         title={t('userDetail.storageManagement')}
         actions={
           <div className="flex items-center gap-2">

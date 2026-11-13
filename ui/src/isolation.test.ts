@@ -30,6 +30,14 @@ describe('the boundary', () => {
     })
   }
 
+  it('defines its section wrapper once, at module scope', () => {
+    // A component created during render is a new type every render: React then
+    // unmounts and remounts its subtree, and the widgets inside keep the page
+    // re-rendering until React refuses ("maximum update depth exceeded").
+    expect(userDetail).toContain('\nfunction SectionCard(')
+    expect(userDetail).not.toContain('const SectionCard = (')
+  })
+
   it('asks the shell for the agent editor instead of rebuilding it', () => {
     expect(account).toContain('features.openAgentForm(')
     expect(account).not.toContain('AgentFormDialog')
