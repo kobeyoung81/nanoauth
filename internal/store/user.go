@@ -42,6 +42,8 @@ type AccountStore interface {
 	CountActiveAdmins() (int, error)
 	ClaimBootstrapAdmin(userID string) (bool, error)
 	ReleaseBootstrapAdmin(userID string) error
+	GetUserPreferredLanguage(userID string) (string, error)
+	SetUserPreferredLanguage(userID, language string) error
 }
 
 // UserStore is the account store the handlers use.

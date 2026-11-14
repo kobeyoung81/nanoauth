@@ -163,6 +163,25 @@ func (a *Accounts) ClaimBootstrapAdmin(string) (bool, error) {
 	return true, nil
 }
 
+// GetUserPreferredLanguage reads the fake account's language choice.
+func (a *Accounts) GetUserPreferredLanguage(userID string) (string, error) {
+	account := a.bus.Account(userID)
+	if account == nil {
+		return "", store.ErrUserNotFound
+	}
+	language, _ := account["preferred_language"].(string)
+	return language, nil
+}
+
+// SetUserPreferredLanguage stores it; an empty value clears the choice.
+func (a *Accounts) SetUserPreferredLanguage(userID, language string) error {
+	if a.bus.Account(userID) == nil {
+		return store.ErrUserNotFound
+	}
+	a.bus.SetAccountField(userID, "preferred_language", language)
+	return nil
+}
+
 func (a *Accounts) ReleaseBootstrapAdmin(string) error {
 	a.claimed = false
 	return nil

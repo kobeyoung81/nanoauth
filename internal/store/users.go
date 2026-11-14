@@ -29,6 +29,10 @@ import (
 // ErrUserNotFound is returned when a user cannot be resolved.
 var ErrUserNotFound = errors.New("user not found")
 
+// ErrUnsupportedLanguage is returned when a language tag is not one of the tags
+// the console offers. The stored value is always a supported primary subtag.
+var ErrUnsupportedLanguage = errors.New("unsupported language")
+
 // ErrChannelDisabled reports a platform identity whose channel has been switched
 // off by an administrator; the inbound path answers the sender with that.
 var ErrChannelDisabled = errors.New("channel disabled")

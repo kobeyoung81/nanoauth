@@ -29,7 +29,11 @@ import (
 type Server struct {
 	cfg      config.AuthConfig
 	accounts *store.Store
-	httpSrv  *http.Server
+	// users is the account store the handlers use: the identity rows plus the
+	// admin module's default (the language the platform ships) and audit trail.
+	// It is the same value Start hands to the auth handlers.
+	users   *store.UserStore
+	httpSrv *http.Server
 }
 
 // New builds the service. accounts may be nil (no database configured).
@@ -38,7 +42,14 @@ type Server struct {
 // the only other module it talks to is the admin module (configuration and the
 // audit trail), which it builds in Start.
 func New(cfg config.AuthConfig, accounts *store.Store) (*Server, error) {
-	return &Server{cfg: cfg, accounts: accounts}, nil
+	s := &Server{cfg: cfg, accounts: accounts}
+	if accounts != nil {
+		// Without the admin module attached: the installation switches and the
+		// platform default fall back to their defaults, which is what a handler
+		// test wants.
+		s.users = store.NewUserStore(accounts)
+	}
+	return s, nil
 }
 
 // loadJWTKeyWithRetry tolerates an admin module that is still starting: the key
@@ -92,7 +103,8 @@ func (s *Server) Start(ctx context.Context) error {
 		return err
 	}
 
-	userStore := store.NewUserStore(s.accounts).WithAdmin(admin)
+	s.users = store.NewUserStore(s.accounts).WithAdmin(admin)
+	userStore := s.users
 	tokenStore := store.NewTokenStore(s.accounts)
 	tokenStore.SetTTL(time.Duration(s.cfg.RefreshTokenTTL) * time.Second)
 
@@ -140,6 +152,10 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.Handle("POST /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalLinkOAuth))
 	mux.Handle("DELETE /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalUnlinkOAuth))
 	mux.Handle("GET /internal/v1/oauth-links", s.internalGuard(s.internalListOAuthLinksByProvider))
+	// The two-level language setting: the account's own choice and the platform
+	// default it falls back to. The console asks this service instead of the bus.
+	mux.Handle("GET /internal/v1/users/{userID}/preferences", s.internalGuard(s.internalGetPreferences))
+	mux.Handle("PUT /internal/v1/users/{userID}/preferences", s.internalGuard(s.internalSetPreferences))
 
 	// The account surface: the console's user page, the sign-in flow's onboarding
 	// and the runtime's questions about one account.

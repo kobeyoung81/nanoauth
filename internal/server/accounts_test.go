@@ -52,7 +52,10 @@ func testAccounts(t *testing.T, token string) *Server {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	s := &Server{cfg: config.AuthConfig{BusToken: token}, accounts: st}
+	s, err := New(config.AuthConfig{BusToken: token}, st)
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
 	return s
 }
 
@@ -71,6 +74,8 @@ func callInternal(t *testing.T, s *Server, method, target, token, body string) *
 	mux.Handle("POST /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalLinkOAuth))
 	mux.Handle("DELETE /internal/v1/users/{userID}/oauth-links/{provider}", s.internalGuard(s.internalUnlinkOAuth))
 	mux.Handle("GET /internal/v1/oauth-links", s.internalGuard(s.internalListOAuthLinksByProvider))
+	mux.Handle("GET /internal/v1/users/{userID}/preferences", s.internalGuard(s.internalGetPreferences))
+	mux.Handle("PUT /internal/v1/users/{userID}/preferences", s.internalGuard(s.internalSetPreferences))
 	mux.Handle("POST /internal/v1/accounts/resolve", s.internalGuard(s.internalResolveAccount))
 	mux.Handle("POST /internal/v1/accounts", s.internalGuard(s.internalRegisterAccount))
 	mux.Handle("GET /internal/v1/accounts", s.internalGuard(s.internalListAccounts))

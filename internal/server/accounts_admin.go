@@ -15,7 +15,11 @@ import (
 )
 
 // accountJSON is one account as this surface reports it.
-func accountJSON(record store.UserRecord) map[string]any {
+// accountJSON is one account as the console reads it: the identity fields, the
+// channels this account is reachable on, and whether it signs in through the
+// directory. The last two are composed here because both are this service's data —
+// the console used to get them from the bus, which asked right back here.
+func accountJSON(record store.UserRecord, channels []string, ldap bool) map[string]any {
 	return map[string]any{
 		"user_id":              record.ID,
 		"display_name":         record.DisplayName,
@@ -25,11 +29,13 @@ func accountJSON(record store.UserRecord) map[string]any {
 		"tier":                 record.Tier,
 		"must_change_password": record.MustChangePassword,
 		"preferred_language":   record.PreferredLanguage,
+		"channels":             channels,
+		"ldap":                 ldap,
 		"updated_at":           record.UpdatedAt,
 	}
 }
 
-func summaryJSON(sum store.UserSummary) map[string]any {
+func summaryJSON(sum store.UserSummary, channels []string, ldap bool) map[string]any {
 	return map[string]any{
 		"user_id":              sum.ID,
 		"display_name":         sum.DisplayName,
@@ -39,8 +45,54 @@ func summaryJSON(sum store.UserSummary) map[string]any {
 		"tier":                 sum.Tier,
 		"must_change_password": sum.MustChangePassword,
 		"preferred_language":   sum.PreferredLanguage,
+		"channels":             channels,
+		"ldap":                 ldap,
 		"updated_at":           sum.UpdatedAt,
 	}
+}
+
+// channelNames is the list of channels one account is reachable on, always a
+// non-nil slice so the console can map over it.
+func (s *Server) channelNames(userID string) []string {
+	channels, err := s.accounts.UserChannels(userID)
+	if err != nil {
+		slog.Warn("read user channels", "user_id", userID, "error", err)
+		return []string{}
+	}
+	if channels == nil {
+		return []string{}
+	}
+	return channels
+}
+
+// directoryLinkedAnswers answers "does this account sign in through the directory"
+// for one account, and directoryLinkedSet does it for a page in one query — the
+// per-row version would be one query per row.
+func (s *Server) directoryLinked(userID string) bool {
+	links, err := s.accounts.OAuthLinks(userID)
+	if err != nil {
+		slog.Warn("read oauth links", "user_id", userID, "error", err)
+		return false
+	}
+	for _, link := range links {
+		if link.Provider == "ldap" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) directoryLinkedSet() map[string]bool {
+	links, err := s.accounts.OAuthProviderLinks("ldap")
+	if err != nil {
+		slog.Warn("read directory links", "error", err)
+		return map[string]bool{}
+	}
+	out := make(map[string]bool, len(links))
+	for _, link := range links {
+		out[link.UserID] = true
+	}
+	return out
 }
 
 // internalResolveAccount is onboarding: whose account is this platform identity, and
@@ -123,7 +175,7 @@ func (s *Server) internalGetAccount(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, accountJSON(*record))
+	writeJSON(w, http.StatusOK, accountJSON(*record, s.channelNames(record.ID), s.directoryLinked(record.ID)))
 }
 
 // internalListAccounts serves both the console's page (limit / include_deleted)
@@ -154,7 +206,7 @@ func (s *Server) internalListAccounts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 			return
 		}
-		writeJSON(w, http.StatusOK, accountJSON(*record))
+		writeJSON(w, http.StatusOK, accountJSON(*record, s.channelNames(record.ID), s.directoryLinked(record.ID)))
 		return
 	}
 	if q := r.URL.Query().Get("q"); q != "" {
@@ -163,7 +215,11 @@ func (s *Server) internalListAccounts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"accounts": summariesJSON(sums)})
+		out := make([]map[string]any, 0, len(sums))
+		for _, sum := range sums {
+			out = append(out, summaryJSON(sum, nil, false))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"accounts": out})
 		return
 	}
 	sums, err := s.accounts.ListUserSummaries(includeDeleted, limit)
@@ -171,15 +227,12 @@ func (s *Server) internalListAccounts(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"accounts": summariesJSON(sums)})
-}
-
-func summariesJSON(sums []store.UserSummary) []map[string]any {
+	directory := s.directoryLinkedSet()
 	out := make([]map[string]any, 0, len(sums))
 	for _, sum := range sums {
-		out = append(out, summaryJSON(sum))
+		out = append(out, summaryJSON(sum, s.channelNames(sum.ID), directory[sum.ID]))
 	}
-	return out
+	writeJSON(w, http.StatusOK, map[string]any{"accounts": out})
 }
 
 // internalPatchAccount applies the fields the request mentions: the console's forms
