@@ -13,6 +13,7 @@ import (
 	"gitee.com/kobeyoung81/nanoauth/internal/config"
 	"gitee.com/kobeyoung81/nanoauth/internal/directory"
 	"gitee.com/kobeyoung81/nanoauth/internal/handler"
+	"gitee.com/kobeyoung81/nanoauth/internal/metrics"
 	"gitee.com/kobeyoung81/nanoauth/internal/middleware"
 	"gitee.com/kobeyoung81/nanoauth/internal/store"
 	"gitee.com/kobeyoung81/nanoauth/internal/token"
@@ -132,6 +133,8 @@ func (s *Server) Start(ctx context.Context) error {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+	// Operational numbers, anonymous: a scraper is infrastructure, not a user.
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("POST /auth/v1/register", authHandler.HandleRegister)
 	mux.HandleFunc("POST /auth/v1/token", authHandler.HandleToken)
 	mux.HandleFunc("POST /auth/v1/token/refresh", authHandler.HandleRefresh)
@@ -200,7 +203,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	s.httpSrv = &http.Server{
 		Addr:    s.cfg.ServerAddr,
-		Handler: withCORS(mux),
+		Handler: metrics.Middleware(withCORS(mux)),
 	}
 
 	slog.Info("nanoauth starting", "addr", s.cfg.ServerAddr)
