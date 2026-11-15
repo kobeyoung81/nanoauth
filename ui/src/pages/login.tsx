@@ -23,6 +23,8 @@ export function LoginPage({ ctx }: { ctx: PageContext }) {
         role: auth.role,
         display_name: auth.display_name,
         must_change_password: auth.must_change_password,
+        access_token: auth.access_token,
+        refresh_token: auth.refresh_token,
       })
       if (auth.must_change_password) {
         navigate('/change-password')
