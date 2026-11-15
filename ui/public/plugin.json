@@ -42,6 +42,45 @@
         "module": "auth/pages",
         "export": "UserDetailPage"
       }
+    },
+    {
+      "id": "login",
+      "path": "/login",
+      "title": {
+        "zh-CN": "登录",
+        "en": "Sign in"
+      },
+      "mount": {
+        "kind": "module",
+        "module": "auth/pages",
+        "export": "LoginPage"
+      }
+    },
+    {
+      "id": "register",
+      "path": "/register",
+      "title": {
+        "zh-CN": "注册",
+        "en": "Register"
+      },
+      "mount": {
+        "kind": "module",
+        "module": "auth/pages",
+        "export": "RegisterPage"
+      }
+    },
+    {
+      "id": "change-password",
+      "path": "/change-password",
+      "title": {
+        "zh-CN": "修改密码",
+        "en": "Change password"
+      },
+      "mount": {
+        "kind": "module",
+        "module": "auth/pages",
+        "export": "ChangePasswordPage"
+      }
     }
   ]
 }

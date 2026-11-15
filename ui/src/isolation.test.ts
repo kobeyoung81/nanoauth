@@ -47,7 +47,17 @@ describe('the boundary', () => {
     for (const page of manifest.pages) {
       expect(pages, `${page.id} is not exported`).toContain(`export { ${page.mount.export} }`)
     }
-    expect(manifest.pages.map((page) => page.path)).toEqual(['/admin/users', '/me', '/admin/users/:id'])
+    // The console's account screens and the three sign-in screens: the auth module
+    // owns every page that talks about an account, including the unauthenticated
+    // ones.
+    expect(manifest.pages.map((page) => page.path)).toEqual([
+      '/admin/users',
+      '/me',
+      '/admin/users/:id',
+      '/login',
+      '/register',
+      '/change-password',
+    ])
   })
 
   it('ships both pages from the remote build under /plugins/auth/', () => {
