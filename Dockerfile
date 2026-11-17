@@ -19,7 +19,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 go build -ldflags "-s -w" -o /bin/nanoauth ./cmd/nanoauth
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /bin/nanoauth ./cmd/nanoauth
 
 FROM alpine:3.19
 
