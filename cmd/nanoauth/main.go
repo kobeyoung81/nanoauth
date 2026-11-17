@@ -16,6 +16,9 @@ import (
 	"gitee.com/kobeyoung81/nanoauth/migrations"
 )
 
+// version is stamped at build time with -X main.version.
+var version = "dev"
+
 // openAccounts connects to the platform database and applies this service's
 // manifests.
 //
@@ -119,6 +122,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	server.Version = version
 	if err := srv.Start(ctx); err != nil {
 		slog.Error("server stopped", "error", err)
 	}
