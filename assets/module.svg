@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-label="nanoauth: callers in, auth collections out, admin for configuration">
+  <title>nanoauth</title>
+  <defs>
+    <style>
+      .txt { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .chip { fill: #F1F5F9; }
+      .card { fill: #FFFFFF; stroke: #E2E8F0; stroke-width: 2; }
+      .wire { stroke: #CBD5E1; stroke-width: 2; }
+      .ink { fill: #0F172A; }
+      .dim { fill: #64748B; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="960" height="420" fill="#FFFFFF"/>
+
+  <g class="txt" font-size="13" fill="#334155">
+    <rect class="chip" x="96" y="40" width="180" height="36" rx="10"/><text x="186" y="63" text-anchor="middle">browsers</text>
+    <rect class="chip" x="292" y="40" width="180" height="36" rx="10"/><text x="382" y="63" text-anchor="middle">gateway</text>
+    <rect class="chip" x="488" y="40" width="180" height="36" rx="10"/><text x="578" y="63" text-anchor="middle">mini program</text>
+    <rect class="chip" x="684" y="40" width="180" height="36" rx="10"/><text x="774" y="63" text-anchor="middle">every service</text>
+  </g>
+
+  <g class="wire">
+    <line x1="186" y1="76" x2="186" y2="105"/>
+    <line x1="382" y1="76" x2="382" y2="105"/>
+    <line x1="578" y1="76" x2="578" y2="105"/>
+    <line x1="774" y1="76" x2="774" y2="105"/>
+    <line x1="186" y1="105" x2="774" y2="105"/>
+    <line x1="480" y1="105" x2="480" y2="140"/>
+  </g>
+
+  <rect x="300" y="140" width="360" height="56" rx="12" fill="#EEF2FF" stroke="#2F6BFF" stroke-width="2.5"/>
+  <text class="txt ink" x="480" y="164" font-size="15" font-weight="700" text-anchor="middle">nanoauth</text>
+  <text class="txt dim" x="480" y="183" font-size="11" text-anchor="middle">accounts · RS256 + JWKS · refresh tickets · directory</text>
+
+  <g class="wire">
+    <line x1="480" y1="196" x2="480" y2="225"/>
+    <line x1="136" y1="225" x2="824" y2="225"/>
+    <line x1="136" y1="225" x2="136" y2="250"/>
+    <line x1="308" y1="225" x2="308" y2="250"/>
+    <line x1="480" y1="225" x2="480" y2="250"/>
+    <line x1="652" y1="225" x2="652" y2="250"/>
+    <line x1="824" y1="225" x2="824" y2="250"/>
+  </g>
+
+  <g class="mono" font-size="10.5" fill="#334155" text-anchor="middle">
+    <rect class="card" x="56" y="250" width="160" height="34" rx="8"/><text x="136" y="271">auth_users</text>
+    <rect class="card" x="228" y="250" width="160" height="34" rx="8"/><text x="308" y="271">auth_secrets</text>
+    <rect class="card" x="400" y="250" width="160" height="34" rx="8"/><text x="480" y="271">auth_refresh_tokens</text>
+    <rect class="card" x="572" y="250" width="160" height="34" rx="8"/><text x="652" y="271">auth_oauth_providers</text>
+    <rect x="744" y="250" width="160" height="34" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="2" stroke-dasharray="4 3"/><text x="824" y="271">nanoadmin</text>
+  </g>
+
+  <text class="txt dim" x="480" y="316" font-size="11" text-anchor="middle">the key pair and the directory settings are configuration, not files: they live in the admin module</text>
+
+  <rect x="56" y="344" width="848" height="46" rx="10" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5"/>
+  <g class="txt" font-size="11" fill="#475569">
+    <text x="76" y="364">a refresh token is a random ticket in a collection, not a JWT — logout and rotation really revoke;</text>
+    <text x="76" y="381">the RSA key pair is generated once and written to configuration, so every replica signs alike.</text>
+  </g>
+</svg>

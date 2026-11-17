@@ -1,189 +1,106 @@
 # nanoauth
 
-OAuth2 / OIDC authentication service for MyriadMind.
+Who you are: accounts, tokens and the key set every other service verifies with.
 
-## Overview
+It is one of the eight first-class services. It owns the `auth_` prefix and hands a
+signed identity to the rest of the platform.
 
-`nanoauth` provides user registration, password hashing (bcrypt), RS256-signed JWTs,
-a public JWKS endpoint for token verification, refresh-token management, and WeChat
-Mini Program OAuth login. It holds **no database credentials of its own**: accounts,
-refresh tickets and OAuth links all live in the bus's store, reached over the bus's
-internal API.
+## What it is
 
-The RSA JWT keypair is **generated automatically and stored behind the bus**
-(`service_config_items`, component `auth`, keys `jwtPrivateKey` and `jwtPublicKey`)
-on first boot — no key files, volumes, or secrets need to be mounted
-anywhere.
+- **Accounts and credentials.** Registration, bcrypt hashes, account status and
+  tier; the first account of a fresh installation becomes the administrator.
+- **RS256 tokens and a JWKS.** Access tokens for every service, a refresh ticket
+  that rotates, and a public key set at a stable URL.
+- **Channel identities.** A person can be reachable on several chat platforms; the
+  bindings live inside the account document.
+- **Directory login.** LDAP and Active Directory, configured in the admin module,
+  with the same credential path as a local password.
+- **A login surface.** The sign-in screens are built here and served by the portal
+  as the `auth` plugin.
 
-The `nanobus` service proxies `/auth/v1/*` to `nanoauth`, so services and the portal
-authenticate through a single endpoint.
+## Where it sits
 
-## API Endpoints
+| | |
+|---|---|
+| Collections | `auth_users`, `auth_secrets`, `auth_refresh_tokens`, `auth_oauth_providers`, `auth_git_shortcuts` |
+| Port | `8081` in the network, `14401` on the host (loopback) |
+| Upstream | browsers, the gateway, the mini program, every service that validates a token |
+| Downstream | `nanoadmin` — configuration (the key pair, directory settings) and the audit trail |
+| Endpoints | `/auth/v1/*`, plus `/plugins/auth/` for the built front end |
 
-| Method | Path                         | Purpose                                      |
-|--------|------------------------------|----------------------------------------------|
-| POST   | `/auth/v1/register`          | Create a user (bcrypt password)              |
-| POST   | `/auth/v1/token`             | OAuth2 password grant → access + refresh token |
-| POST   | `/auth/v1/token/refresh`     | Exchange a refresh token for a new pair      |
-| GET    | `/auth/v1/userinfo`          | OIDC userinfo (Bearer token)                 |
-| POST   | `/auth/v1/oauth/wechat`      | WeChat Mini Program login (code → token)     |
-| GET    | `/auth/v1/.well-known/jwks`  | RS256 public key set for JWT verification    |
-
-## Configuration
-
-Loaded from environment variables (prefix: `NANOAUTH_`). Defaults are defined in
-`internal/config`.
-
-| Variable                     | Default          | Description                          |
-|------------------------------|------------------|--------------------------------------|
-| `NANOAUTH_ADDR`              | `:8081`          | HTTP listen address                  |
-| `NANOSEC_ADMIN_URL`          | `http://nanoadmin:8080` | admin module: its configuration and the audit trail |
-| `NANOSEC_BUS_INTERNAL_TOKEN` |                  | shared token presented to the admin module |
-| `NANOAUTH_JWT_KEY_ID`        | `2026-08`        | JWT `kid` header                     |
-| `NANOAUTH_JWT_KEY_BITS`      | `2048`           | RSA modulus size for the generated keypair |
-| `NANOAUTH_WECHAT_APP_ID`     |                  | WeChat Mini Program app ID           |
-| `NANOAUTH_WECHAT_APP_SECRET` |                  | WeChat Mini Program app secret       |
-
-The RSA keypair is stored in the shared key-value config store (`service_config_items`,
-component `auth`, keys `jwtPrivateKey` with `value_type=secret` and `jwtPublicKey` with
-`value_type=string`) and generated on first boot, so multiple replicas share the same
-signing key. **Security note:** the private key is at rest in the bus's store — restrict
-access to the bus and protect its backups.
-
-## LDAP directory login
-
-Set `ldap.enabled=true` and users sign in with their corporate email: `nanoauth`
-searches the directory for the entry matching `ldap.userFilter`, binds with the
-entry's own DN and the supplied password, and then issues the platform's own JWT.
-No directory password is ever stored, and the platform never writes to the
-directory.
-
-The settings are edited on the portal's **directory login page** (management
-section, `/admin/directory`) or, key by key, in the config center (Configs →
-`auth`); both write the same rows, so they always show one truth. The page adds
-what the raw keys cannot: a five-step connection probe, a browsable tree, an
-attribute analysis that suggests the filter and the identity attributes, a group
-picker, and a dry run that walks a real login without creating or linking
-anything (`/auth/v1/directory/*`, reachable through the portal's
-`/api/admin/v1/directory/*`, verified token and management role required).
-
-| Config key (`service_config_items`, component `auth`) | AD default | OpenLDAP |
-|---|---|---|
-| `ldap.enabled` | `false` | `false` |
-| `ldap.url` | `ldap://127.0.0.1:389` | same |
-| `ldap.startTLS` | `false` | same |
-| `ldap.tlsInsecureSkipVerify` | `false` | same |
-| `ldap.caCertPEM` | *(empty)* | *(empty)* |
-| `ldap.timeoutSeconds` | `10` | `10` |
-| `ldap.baseDN` | *(empty)* | e.g. `dc=corp,dc=local` |
-| `ldap.userFilter` | `(&(objectClass=user)(mail=%s))` | `(&(objectClass=inetOrgPerson)(mail=%s))` |
-| `ldap.requiredGroupDN` | *(empty)* | *(empty)* |
-| `ldap.groupMatchInChain` | `false` | `false` |
-| `ldap.bindDN` | *(empty = anonymous search)* | *(empty)* |
-| `ldap.bindPassword` | *(empty)* | *(empty)* |
-| `ldap.attrUniqueId` | `objectGUID` | `entryUUID` |
-| `ldap.attrUsername` | `sAMAccountName` | `uid` |
-| `ldap.attrDisplayName` | `displayName` | `cn` |
-| `ldap.autoProvision` | `true` | `true` |
-| `ldap.linkPolicy` | `auto` | `auto` |
-| `ldap.disableOnMissing` | `false` | `false` |
-| `ldap.syncDisplayName` | `false` | `false` |
-
-`ldap.linkPolicy` decides what happens when the directory vouches for an email
-that already has a platform account: `auto` links the two, `refuse` leaves the
-account alone and answers 409. `ldap.disableOnMissing` suspends a
-directory-linked account whose entry has disappeared from the directory (a
-departed employee) instead of refusing every login with 401.
-`ldap.syncDisplayName` follows a rename in the directory into the platform name
-on each login.
-
-The settings are cached for 30 seconds, so an edit in the portal takes effect
-without restarting `nanoauth`.
-
-### What happens on a login
-
-1. An account already linked to the directory signs in through the directory
-   only: its local `password_hash` is never consulted, even while the directory
-   is down (which answers `503` instead of falling back).
-2. An account with a local password is offered to the directory first; when the
-   email is not in the directory, or the directory cannot be reached, the local
-   password still works.
-3. An email that exists in the directory but has no platform account yet is
-   provisioned on the spot (`ldap.autoProvision=true`) and carries no local
-   password.
-4. An email matching an existing **normal user** account is linked to that account
-   instead of creating a second one (`ldap.linkPolicy=auto`, the default), and its
-   local password hash is erased in the same step: from then on the account signs
-   in through the directory only. Privileged accounts
-   (`admin`/`operator`/`support`/`auditor`) are never linked and never sign in with
-   a directory password — editing a `mail` attribute in the directory must not hand
-   out platform administration.
-5. Directory groups carry no platform roles: a directory user always ends up with
-   `role=user` and `tier=free`. Grant roles in the portal.
-
-Provisioning and linking each write an `audit_log` row
-(`user.ldap.provision` / `user.ldap.link`).
-
-### Requirements
-
-- `ldap.userFilter` **must keep its `%s` placeholder**: it is where the sign-in
-  email goes. Without it every login searches for the same entry and the
-  directory answers with several matches, so nobody can sign in — the config
-  center accepts such a value (it validates nothing), while the directory login
-  page refuses to save it.
-- The attribute `ldap.userFilter` matches on must be unique in the directory: a
-  duplicate match is refused (401) rather than resolved by picking one entry.
-- On AD, `objectGUID` keeps the account across an OU move. Without a usable
-  unique attribute the login falls back to `ldap.attrUsername` and then to the
-  lowercased DN, which a move would turn into a second account.
-- The search may run anonymously; set `ldap.bindDN`/`ldap.bindPassword` when the
-  directory requires an authenticated read.
-- `ldap.requiredGroupDN` restricts sign-in to that group;
-  `ldap.groupMatchInChain` switches to AD's nested-group matching rule
-  `1.2.840.113556.1.4.1941` (AD only).
-
-## Build & Run
+## Quick start
 
 ```bash
 go build ./cmd/nanoauth
-
-NANOAUTH_ADDR=:8081 \
+NANOAUTH_MONGO_URI="mongodb://localhost:27017/nanosec" \
 NANOSEC_ADMIN_URL="http://localhost:14404" \
-NANOSEC_BUS_INTERNAL_TOKEN="<the deployment's shared token>" \
-NANOSEC_BUS_DATABASE_URI="mongodb://…/nanosec" \
-./nanoauth
+NANOSEC_BUS_INTERNAL_TOKEN="…" \
+  ./nanoauth
 ```
 
-## Docker
+No key files to mount: the RSA key pair is generated on first boot and written into
+the admin module's configuration (`admin_config`, component `auth`), so every replica
+signs with the same key.
 
-```bash
-docker build -t nanoauth .
-docker run -p 8081:8081 \
-  -e NANOSEC_ADMIN_URL=http://nanoadmin:8080 \
-  -e NANOSEC_BUS_INTERNAL_TOKEN=... \
-  -e NANOSEC_BUS_DATABASE_URI="mongodb://…/nanosec" \
-  nanoauth
-```
+## Configuration
 
-In the top-level `docker-compose.yml` no keys are mounted — `nanoauth` bootstraps its
-keypair into the platform configuration, which it reads and writes through the admin
-module.
+| Variable | Meaning |
+|---|---|
+| `NANOAUTH_MONGO_URI` | The platform database; falls back to `NANOSEC_BUS_DATABASE_URI` |
+| `NANOAUTH_ADDR` | Listen address, default `:8081` |
+| `NANOSEC_ADMIN_URL` | Where configuration and the audit trail live |
+| `NANOSEC_BUS_INTERNAL_TOKEN` | Shared secret for the admin module's internal surfaces |
+| `NANOAUTH_JWT_KEY_ID` | `kid` published with the key set |
+| `NANOAUTH_TOKEN_TTL` / `NANOAUTH_REFRESH_TTL` | Access token and refresh ticket lifetimes, in seconds |
+| `NANOAUTH_WECHAT_APP_ID` / `NANOAUTH_WECHAT_APP_SECRET` | Mini Program login |
+| `NANOAUTH_UI_DIR` | Built front end to serve under `/plugins/auth/`; empty disables it |
 
-## Scope
+Directory settings — host, bind DN, base DN, filters — are configuration, not
+environment: they live under `ldap.*` and are edited in the console.
 
-**Does:** User registration with bcrypt, RS256 JWT signing (DB-stored keypair), JWKS
-endpoint, refresh token management, token introspection/validation, WeChat OAuth login.
+## API
 
-**Does NOT:** Call LLMs, handle chat platform adapters, manage agent config or sessions.
+| Endpoint | What it does |
+|---|---|
+| `POST /auth/v1/register` | Create an account |
+| `POST /auth/v1/token` | Password or directory login → access token + refresh ticket |
+| `POST /auth/v1/token/refresh` | Rotate the ticket, get a new access token |
+| `POST /auth/v1/logout` | Invalidate the ticket |
+| `GET /auth/v1/userinfo` | Claims for a bearer token |
+| `POST /auth/v1/oauth/wechat` | Mini Program login |
+| `GET /auth/v1/.well-known/jwks` | The public key set |
+| `GET /healthz`, `GET /metrics` | Liveness and Prometheus |
 
-## Packages
+## Design decisions
 
-| Package | Purpose |
-|---------|---------|
-| `cmd/nanoauth` | Binary entry point (env-based config) |
-| `internal/config` | Config struct + defaults |
-| `internal/server` | HTTP server, routing, CORS |
-| `internal/handler` | Auth / OAuth / JWKS handlers |
-| `internal/middleware` | Bearer-token auth middleware |
-| `internal/store` | Bus-backed users / refresh tokens / `service_config_items` key store |
-| `internal/token` | JWT sign/verify (RS256), PEM encode/parse |
+- **One write creates a person.** The account and its channel identities are a
+  single `insertOne`; there is no half-onboarded user with an orphan channel row.
+- **The refresh token is a ticket, not a JWT.** It is a random string stored in
+  `auth_refresh_tokens`, so logout and rotation are real revocations.
+- **The key pair lives in configuration.** Generated once, read by every replica,
+  and rotated by replacing the value — no secret volume to mount.
+- **Directory login authenticates, it does not store.** A successful bind returns an
+  identity that this service maps onto an account; the directory is never written.
+
+## Docs
+
+- [`docs/ACCOUNT_MANAGEMENT_DESIGN.md`](https://gitee.com/kobeyoung81/nanosec/blob/master/docs/ACCOUNT_MANAGEMENT_DESIGN.md) — accounts, channels and sessions
+- [`docs/ARCHITECTURE.md`](https://gitee.com/kobeyoung81/nanosec/blob/master/docs/ARCHITECTURE.md) — the platform around this module
+- [`docs/README.md`](https://gitee.com/kobeyoung81/nanosec/blob/master/docs/README.md) — every document
+
+## Status
+
+Released as part of `v0.1.0`; the version of this module is pinned in the
+super-repo's `versions.lock`.
+
+## Contributing and security
+
+[`CONTRIBUTING.md`](https://gitee.com/kobeyoung81/nanosec/blob/master/CONTRIBUTING.md)
+for setup and commit rules; report vulnerabilities privately through
+[`SECURITY.md`](https://gitee.com/kobeyoung81/nanosec/blob/master/SECURITY.md), never
+in a public issue.
+
+## License
+
+[AGPL-3.0](./LICENSE). The name and logo are covered separately — see
+[`NOTICE`](./NOTICE).
