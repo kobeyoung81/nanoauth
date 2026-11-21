@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { federation } from '@module-federation/vite'
+import { splitUtilityLayers } from './vite-plugins/splitUtilityLayers'
 
 // The auth module's front end.
 //
@@ -18,6 +19,9 @@ export default defineConfig({
     // only scans the shell's sources, and the shell no longer carries a copy of
     // these screens. See src/styles.css for why they go into the `plugin` layer.
     tailwindcss(),
+    // Base rules one layer below the shell, variants in the shell's own layer:
+    // see vite-plugins/splitUtilityLayers.ts for why both are needed.
+    splitUtilityLayers(),
     federation({
       name: 'auth',
       filename: 'remoteEntry.js',
